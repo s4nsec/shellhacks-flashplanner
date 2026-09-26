@@ -6,6 +6,7 @@ TRANSIT. Requests are split by origin rows and sent in parallel.
 """
 import asyncio
 import math
+from datetime import datetime, timedelta
 
 import httpx
 
@@ -14,6 +15,7 @@ from . import config
 MATRIX_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix"
 ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
 LIMITS = {"WALK": 625, "TRANSIT": 100, "DRIVE": 625}
+TRANSIT_HORIZON = timedelta(days=14)  # Google's transit timetables don't reliably reach further
 
 
 def _wp(pt: tuple[float, float]) -> dict:
@@ -22,6 +24,14 @@ def _wp(pt: tuple[float, float]) -> dict:
 
 def _loc(pt: tuple[float, float]) -> dict:
     return {"location": {"latLng": {"latitude": pt[0], "longitude": pt[1]}}}
+
+
+def transit_departure(dep_utc: datetime, now_utc: datetime) -> datetime:
+    """A departure Google has transit timetables for: the same weekday and time, moved back
+    whole weeks until it's within TRANSIT_HORIZON of now. Past the horizon, Google returns
+    long detours, such as 4 hours to an airport that is 1.5 hours away."""
+    weeks = max(0, math.ceil((dep_utc - now_utc - TRANSIT_HORIZON) / timedelta(weeks=1)))
+    return dep_utc - timedelta(weeks=weeks)
 
 
 async def matrix(http: httpx.AsyncClient, pts: list[tuple[float, float]], mode: str,
