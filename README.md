@@ -13,7 +13,7 @@ Built for ShellHacks: the Waymo Mobility Challenge and Best Use of Gemini API.
 
 | Step | Service | Code |
 |---|---|---|
-| Read the traveler's message into settings | Gemini (structured output) | `server/gemini.py: parse_trip()` |
+| Read the optional "anything else" notes into settings | Gemini (structured output) | `server/gemini.py: parse_trip()` |
 | Find candidate places, hours, ratings | Places API (New) Text Search | `server/places.py: search_text()` |
 | Score each place for this traveler | Gemini | `server/gemini.py: score_places()` |
 | Read up to 5 reviews per place for visit length | Places API + Gemini | `get_reviews()`, `estimate_visits()` |
@@ -49,7 +49,8 @@ You need Python 3.10 or newer.
      **Maps JavaScript API**.
    - Create a **server key** under Credentials. Under API restrictions, allow
      Places API (New), Routes API and Weather API.
-   - Create a **browser key**. Allow only Maps JavaScript API, and under
+   - Create a **browser key**. Allow only Maps JavaScript API and Places API
+     (New) (for the "Start at" suggestions), and under
      application restrictions add the HTTP referrer `http://localhost:8000/*`
      (plus your deployed URL later).
 
@@ -74,8 +75,10 @@ You need Python 3.10 or newer.
 
 - `GET /api/config`: which keys are set, and the browser map key.
 - `GET /api/demo`: static no-key Montreal plan for judging or screenshots.
-- `POST /api/parse` `{message}`: Gemini turns a message into trip settings.
-- `POST /api/plan` with the trip settings: streams newline-delimited JSON,
+- `POST /api/parse` `{message, city?}`: Gemini turns the optional notes into trip
+  settings. The page only uses them to fill fields left blank.
+- `POST /api/plan` with the trip settings (plus `start_place` when "Start at"
+  came from autocomplete, and optional `notes`): streams newline-delimited JSON,
   one `step` event per stage, then a `plan` event (or an `error` event).
 - `POST /api/interpret` `{session_id, text}`: Gemini function call, returns
   `{reason, delay_minutes}`.
@@ -93,7 +96,12 @@ Constants at the top of `server/planner.py`:
 - `SWITCH_POINTS`: how strongly the day sticks to one neighborhood at a time.
 - `TRAVEL_POINTS_PER_MIN`: how much travel time counts against a plan.
 - `WALK_CAP_KM`: longest leg that's always walked, per mode.
-- `LUNCH`, `DINNER`: when sit-down meals may start.
+- `MEAL_EARLY_MIN`, `MEAL_LATE_MIN`: how long before and after each requested
+  meal time a sit-down meal may start. Meals come from the trip's `meals` list, which defaults to
+  lunch at 12:30 and dinner at 19:00; add breakfast, change the times, or send
+  `[]` for no sit-down meals.
+- `BREAK_AFTER_MIN`: how long into the day (by pace) a café becomes a coffee
+  break. Only days long enough get one, and `auto_breaks: false` turns it off.
 - `PACE`: how pace scales visit lengths.
 - `RAIN_FACTOR`: how much a visit in forecast rain is worth, by setting.
 
@@ -105,10 +113,11 @@ travel times and a spot in the solver. More places means more API calls.
 
 ## Cost and limits per planned day
 
-Roughly 5 Text Search calls, up to 20 Place Details calls for reviews, 2 or 3
-route matrices of about 440 pairs each, about a dozen Compute Routes calls, 1 to
-10 Weather API calls (one per 24 forecast hours until the end of the trip day),
-and 5 Gemini calls. Reviews and ratings are billed at higher tiers than basic place
+Roughly 5 Text Search calls (6 when the day is long enough for a coffee break),
+up to 20 Place Details calls for reviews, 2 or 3 route matrices of about 440
+pairs each, about a dozen Compute Routes calls, 1 to 10 Weather API calls (one
+per 24 forecast hours until the end of the trip day), and 5 Gemini calls.
+Reviews and ratings are billed at higher tiers than basic place
 fields, so check the Maps Platform pricing page and set a budget alert.
 Transit matrices allow 100 pairs per request; `routes.matrix()` batches them.
 

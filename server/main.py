@@ -285,7 +285,8 @@ async def parse(req: ParseRequest):
         raise HTTPException(502, f"Gemini couldn't read the message: {e}")
     date = p.date or None
     if p.relative_day:
-        day = resolve_relative_day(p.relative_day, await city_today(p.city, p.start_location))
+        day = resolve_relative_day(
+            p.relative_day, await city_today(req.city or p.city, p.start_location))
         date = day.isoformat() if day else date
     return {
         "city": p.city,
@@ -299,10 +300,38 @@ async def parse(req: ParseRequest):
         "pace": p.pace if p.pace in planner.PACE else "normal",
         "getting_around": p.getting_around if p.getting_around in MODE_API else "transit",
         "by_neighborhood": p.by_neighborhood,
+        "meals": [{"name": m.name.lower(), "time": m.time} for m in p.meals
+                  if m.name.lower() in planner.MEAL_NAMES and planner.clock_minutes(m.time) is not None],
+        "auto_breaks": p.auto_breaks,
     }
 
 
 # ---------- 2. plan the day ----------
+
+async def resolve_start(http: httpx.AsyncClient, trip: dict, city: str) -> tuple[dict, int] | str:
+    """The starting point and the city's UTC offset, or an error message.
+
+    A place picked from autocomplete already has coordinates, so it isn't looked
+    up again. Only its UTC offset may be missing, and that comes from the city.
+    """
+    picked = trip.get("start_place")
+    if picked:
+        hotel = {"name": picked["name"], "lat": picked["lat"], "lng": picked["lng"]}
+        if picked.get("utc_offset_minutes") is not None:
+            return hotel, picked["utc_offset_minutes"]
+        hits = await places.search_text(http, city, 1, (hotel["lat"], hotel["lng"]))
+        if not hits or "utcOffsetMinutes" not in hits[0]:
+            log.warning("No UTC offset for %s; using UTC", city)
+        return hotel, (hits[0].get("utcOffsetMinutes", 0) if hits else 0)
+    start_q = f"{trip['start_location']}, {city}" if trip.get("start_location") else city
+    hits = await places.search_text(http, start_q, 1)
+    if not hits:
+        return f"Google Maps couldn't find “{start_q}”. Try a hotel name or street address."
+    sp = hits[0]
+    hotel = {"name": places.display_name(sp), "lat": sp["location"]["latitude"],
+             "lng": sp["location"]["longitude"]}
+    return hotel, sp.get("utcOffsetMinutes", 0)
+
 
 @app.post("/api/plan")
 async def plan(req: TripRequest):
@@ -319,22 +348,19 @@ async def plan_stream(req: TripRequest, persist: bool = True):
     if not city:
         yield ev(type="error", message="Say which city you're visiting.")
         return
+    wants_break = planner.needs_break(trip, to_min(trip["start_time"], 600), to_min(trip["end_time"], 1140))
     try:
         async with httpx.AsyncClient(timeout=40) as http:
             # --- find the starting point and candidate places
-            start_q = f"{trip['start_location']}, {city}" if trip.get("start_location") else city
             yield step_run("find", "Find places worth seeing",
                            f'places.searchText("top tourist attractions in {city}")',
                            "server/places.py: search_text()")
             t0 = time.perf_counter()
-            start_hits = await places.search_text(http, start_q, 1)
-            if not start_hits:
-                yield ev(type="error", message=f"Google Maps couldn't find “{start_q}”. Try a hotel name or street address.")
+            start = await resolve_start(http, trip, city)
+            if isinstance(start, str):
+                yield ev(type="error", message=start)
                 return
-            sp = start_hits[0]
-            hotel = {"name": places.display_name(sp), "lat": sp["location"]["latitude"],
-                     "lng": sp["location"]["longitude"]}
-            utc_offset = sp.get("utcOffsetMinutes", 0)
+            hotel, utc_offset = start
             bias = (hotel["lat"], hotel["lng"])
 
             end_location = hotel
@@ -356,9 +382,13 @@ async def plan_stream(req: TripRequest, persist: bool = True):
             named = ([(n, "must", None) for n in trip["must_see"]]
                      + [(n, "list", None) for n in trip["user_list"]]
                      + [(a["place"], "appointment", a["time"]) for a in trip["appointments"]])
+            cafe_query = [f"best coffee shops in {city}"] if wants_break and not using_list else []
             results = await asyncio.gather(
                 *(places.search_text(http, q, 20, bias) for q in queries),
-                *(places.search_text(http, f"{n}, {city}", 1, bias) for n, _, _ in named))
+                *(places.search_text(http, f"{n}, {city}", 1, bias) for n, _, _ in named),
+                *(places.search_text(http, q, 10, bias) for q in cafe_query))
+            cafes = [p for res in results[len(queries) + len(named):] for p in res if places.is_visitable(p)]
+            results = results[:len(queries) + len(named)]
             found: dict[str, dict] = {}
             flags: dict[str, set] = {}
             appointment_times: dict[str, int] = {}
@@ -385,6 +415,10 @@ async def plan_stream(req: TripRequest, persist: bool = True):
             for pid in flags:  # never drop named places
                 if pid not in ids:
                     ids.append(pid)
+            for p in cafes[:planner.BREAK_CANDIDATES * 2]:  # options for the coffee break
+                found.setdefault(p["id"], p)
+                if p["id"] not in ids:
+                    ids.append(p["id"])
             raw = [found[i] for i in ids]
             if not raw:
                 yield ev(type="error", message=f"No places came back for {city}. Check the city name.")
@@ -406,7 +440,7 @@ async def plan_stream(req: TripRequest, persist: bool = True):
                       "must_see": "must" in flags.get(p["id"], set()),
                       "appointment": "appointment" in flags.get(p["id"], set())} for p in raw]
             judged = {j.id: j for j in await gemini.score_places(
-                {k: trip[k] for k in ("city", "loves", "skips", "must_see", "appointments", "pace")}, brief)}
+                {k: trip[k] for k in ("city", "loves", "skips", "must_see", "appointments", "pace", "notes")}, brief)}
             cands = []
             for p in raw:
                 j = judged.get(p["id"])
@@ -429,6 +463,10 @@ async def plan_stream(req: TripRequest, persist: bool = True):
             cands.sort(key=lambda c: (not (c.must or c.appointment_time is not None), -c.score))
             required = sum(c.must or c.appointment_time is not None for c in cands)
             shortlist = cands[:max(SHORTLIST, required)]
+            if wants_break:  # keep a few cafés in play for the coffee break
+                have = sum(c.kind == "snack" and not c.must for c in shortlist)
+                shortlist += [c for c in cands[len(shortlist):]
+                              if c.kind == "snack" and not c.must][:max(0, planner.BREAK_CANDIDATES - have)]
             top = ", ".join(f"{c.name} {c.score}" for c in shortlist[:3])
             log.info("Trip %s: loves=%s skips=%s must_see=%s", city, trip["loves"], trip["skips"], trip["must_see"])
             short_ids = {c.id for c in shortlist}
@@ -550,6 +588,7 @@ async def plan_stream(req: TripRequest, persist: bool = True):
             yield step_ok("matrix", t0, f"{len(pts) ** 2 * len(modes):,} real travel times "
                                         f"({', '.join(m.lower() for m in modes)}).")
 
+            planner.mark_break_stops(shortlist, trip, start_min, deadline)
             s = planner.Session(
                 id=uuid.uuid4().hex[:12], trip=trip, date=day.isoformat(), weekday=weekday,
                 utc_offset=utc_offset, sunset=sunset, hotel=hotel,
@@ -818,7 +857,7 @@ async def _story(s, cuts):
         "rain_forecast": _windows_text(_rain_windows(s.rain_hours, s.start, s.deadline)) or None,
         "left_out": cuts[:2],
         "finish": {"name": s.end_location["name"], "at": fmt(res["end"])},
-        "traveler": {k: s.trip.get(k) for k in ("loves", "skips", "pace")},
+        "traveler": {k: s.trip.get(k) for k in ("loves", "skips", "pace", "notes")},
     }
     try:
         return await gemini.narrate_plan(facts)
