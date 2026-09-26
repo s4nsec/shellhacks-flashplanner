@@ -1,7 +1,7 @@
 """The route math: which places to visit, in what order, at what times.
 
 Model: one "vehicle" (the traveler) leaves a start point at a start time and must
-be back at the hotel by the deadline. Every place is optional (prize-collecting):
+reach the requested end point by the deadline. Every place is optional (prize-collecting):
 skipping one costs its score, so the solver fits the most valuable set of stops.
 Opening hours are time windows, visit lengths are service times, meals must land
 in lunch or dinner hours, viewpoints lean toward golden hour, and switching
@@ -49,6 +49,8 @@ class Cand:
     zone: int = 0
     zone_name: str = ""
     must: bool = False
+    fixed_time: int | None = None
+    appointment_label: str = ""
 
 
 @dataclass
@@ -59,8 +61,9 @@ class Session:
     weekday: int                  # Places convention, 0 = Sunday
     utc_offset: int
     sunset: int | None
-    hotel: dict                   # {name, lat, lng}
-    cands: list                   # node k (k >= 1) is cands[k - 1]; node 0 is the hotel
+    hotel: dict                   # start point: {name, lat, lng}
+    end: dict                     # finish point: {name, lat, lng}
+    cands: list                   # node k (k >= 1) is cands[k - 1]; node 0 is the start
     walk: list
     walk_m: list
     transit: list
@@ -80,12 +83,18 @@ class Session:
     dropped: list = field(default_factory=list)
     compare: dict | None = None
 
+    @property
+    def end_node(self) -> int:
+        return len(self.cands) + 1
+
     def cand(self, node: int) -> Cand:
         return self.cands[node - 1]
 
     def point(self, node: int) -> tuple[float, float]:
         if node == 0:
             return (self.hotel["lat"], self.hotel["lng"])
+        if node == self.end_node:
+            return (self.end["lat"], self.end["lng"])
         c = self.cand(node)
         return (c.lat, c.lng)
 
@@ -179,6 +188,9 @@ def allowed_starts(s: Session, node: int, t0: int) -> list:
     """Time intervals when a visit to this node may start."""
     c, v = s.cand(node), visit_len(s, node)
     iv = [(o, cl - v) for o, cl in c.windows if cl - v >= o]
+    if c.fixed_time is not None:
+        iv = intersect(iv, [(c.fixed_time, c.fixed_time)])
+        return intersect(iv, [(t0, s.deadline - v)])
     if c.kind == "meal":
         iv = intersect(iv, [LUNCH, DINNER])
     return intersect(iv, [(t0, s.deadline - v)])
@@ -226,10 +238,12 @@ def simulate(s: Session, route: list, t0: int, start_node: int) -> dict | None:
         if (s.sunset and c.kind == "viewpoint" and c.setting != "indoor" and not s.raining
                 and s.sunset - 80 <= begin <= s.sunset):
             notes.append("golden")
+        if c.fixed_time is not None:
+            notes.append("appointment")
         stops.append({"node": node, "from": loc, "leg": L, "arrive": arrive, "begin": begin,
                       "wait": begin - arrive, "leave": leave, "notes": notes})
         t, loc = leave, node
-    back = leg(s, loc, 0)
+    back = leg(s, loc, s.end_node)
     end = t + back["min"]
     if end > s.deadline:
         return None
@@ -245,7 +259,7 @@ def simulate(s: Session, route: list, t0: int, start_node: int) -> dict | None:
 
 def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: int = 3) -> list:
     feasible = [k for k in cand_nodes if allowed_starts(s, k, t0)]
-    nodes = [start_node, 0] + feasible            # local 0 = start, local 1 = hotel (end)
+    nodes = [start_node, s.end_node] + feasible   # local 0 = start, local 1 = requested end
     n = len(nodes)
     T = [[0 if i == j else leg(s, nodes[i], nodes[j])["min"] for j in range(n)] for i in range(n)]
     visit = [0, 0] + [visit_len(s, k) for k in feasible]
@@ -293,7 +307,7 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
         if s.sunset and c.kind == "viewpoint" and c.setting != "indoor" and not s.raining:
             time_dim.SetCumulVarSoftLowerBound(idx, s.sunset - 75, 25)
             time_dim.SetCumulVarSoftUpperBound(idx, s.sunset, 50)
-        penalty = int(points(s, k) * SCALE) + (10**7 if c.must else 0)
+        penalty = int(points(s, k) * SCALE) + (10**7 if c.must or c.fixed_time is not None else 0)
         routing.AddDisjunction([idx], penalty)
 
     params = pywrapcp.DefaultRoutingSearchParameters()

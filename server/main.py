@@ -45,6 +45,11 @@ def fmt(m: int) -> str:
     return f"{(h + 11) % 12 + 1}:{mm:02d} {'pm' if h >= 12 else 'am'}"
 
 
+def place_json(place: dict) -> dict:
+    return {"name": places.display_name(place), "lat": place["location"]["latitude"],
+            "lng": place["location"]["longitude"]}
+
+
 def ev(**kw) -> str:
     return json.dumps(kw, ensure_ascii=False) + "\n"
 
@@ -108,7 +113,9 @@ async def parse(req: ParseRequest):
         "start_time": p.start_time or None,
         "end_time": p.end_time or None,
         "start_location": p.start_location or None,
+        "end_location": p.end_location or None,
         "loves": p.loves, "skips": p.skips, "must_see": p.must_see,
+        "appointments": [a.model_dump() for a in p.appointments],
         "pace": p.pace if p.pace in planner.PACE else "normal",
         "getting_around": p.getting_around if p.getting_around in MODE_API else "transit",
         "by_neighborhood": p.by_neighborhood,
@@ -145,20 +152,41 @@ async def plan_stream(req: TripRequest):
                 yield ev(type="error", message=f"Google Maps couldn't find “{start_q}”. Try a hotel name or street address.")
                 return
             sp = start_hits[0]
-            hotel = {"name": places.display_name(sp), "lat": sp["location"]["latitude"],
-                     "lng": sp["location"]["longitude"]}
+            hotel = place_json(sp)
+            end_place = hotel
+            if trip.get("end_location"):
+                end_q = f"{trip['end_location']}, {city}"
+                end_hits = await places.search_text(http, end_q, 1)
+                if not end_hits:
+                    yield ev(type="error", message=f"Google Maps couldn't find “{end_q}”. Try a station, airport or street address.")
+                    return
+                end_place = place_json(end_hits[0])
             utc_offset = sp.get("utcOffsetMinutes", 0)
             bias = (hotel["lat"], hotel["lng"])
 
             using_list = bool(trip["user_list"])
+            appointments = []
+            for appt in trip.get("appointments", []):
+                place = (appt.get("place") or "").strip()
+                fixed = to_min(appt.get("time"), -1)
+                if not place or fixed < 0:
+                    continue
+                appointments.append({
+                    "place": place,
+                    "time_min": fixed,
+                    "duration_minutes": max(15, min(240, int(appt.get("duration_minutes") or 60))),
+                })
             queries = [] if using_list else (
                 [f"top tourist attractions in {city}"] + [f"best {x} in {city}" for x in trip["loves"][:3]])
-            named = [(n, "must") for n in trip["must_see"]] + [(n, "list") for n in trip["user_list"]]
+            named = ([(n, "must") for n in trip["must_see"]]
+                     + [(a["place"], "appointment") for a in appointments]
+                     + [(n, "list") for n in trip["user_list"]])
             results = await asyncio.gather(
                 *(places.search_text(http, q, 20, bias) for q in queries),
                 *(places.search_text(http, f"{n}, {city}", 1, bias) for n, _ in named))
             found: dict[str, dict] = {}
             flags: dict[str, set] = {}
+            fixed_by_id: dict[str, dict] = {}
             rank: dict[str, int] = {}
             for qi, res in enumerate(results[:len(queries)]):
                 for i, p in enumerate(res):
@@ -167,10 +195,13 @@ async def plan_stream(req: TripRequest):
                     if places.is_visitable(p):
                         found.setdefault(p["id"], p)
             missing_names = []
+            appt_by_name = {a["place"]: a for a in appointments}
             for (name, kind), res in zip(named, results[len(queries):]):
                 if res:
                     found.setdefault(res[0]["id"], res[0])
                     flags.setdefault(res[0]["id"], set()).add(kind)
+                    if kind == "appointment":
+                        fixed_by_id.setdefault(res[0]["id"], appt_by_name[name])
                 else:
                     missing_names.append(name)
             ids = list(found)[:MAX_CANDIDATES]
@@ -195,13 +226,14 @@ async def plan_stream(req: TripRequest):
             brief = [{"id": p["id"], "name": places.display_name(p), "types": p.get("types", [])[:4],
                       "rating": p.get("rating"), "reviews": p.get("userRatingCount", 0),
                       "summary": p.get("editorialSummary", {}).get("text", ""),
-                      "must_see": "must" in flags.get(p["id"], set())} for p in raw]
+                      "must_see": bool(flags.get(p["id"], set()) & {"must", "appointment"})} for p in raw]
             judged = {j.id: j for j in await gemini.score_places(
-                {k: trip[k] for k in ("city", "loves", "skips", "must_see", "pace")}, brief)}
+                {k: trip[k] for k in ("city", "loves", "skips", "must_see", "appointments", "pace")}, brief)}
             cands = []
             for p in raw:
                 j = judged.get(p["id"])
-                must = "must" in flags.get(p["id"], set())
+                fixed = fixed_by_id.get(p["id"])
+                must = "must" in flags.get(p["id"], set()) or fixed is not None
                 c = planner.Cand(
                     id=p["id"], name=places.display_name(p),
                     lat=p["location"]["latitude"], lng=p["location"]["longitude"],
@@ -213,6 +245,11 @@ async def plan_stream(req: TripRequest):
                     setting=j.setting if j and j.setting in planner.RAIN_FACTOR else "indoor",
                     reason=j.reason if j else "", must=must)
                 c.visit_min = planner.KIND_DEFAULT_MIN[c.kind]
+                if fixed:
+                    c.fixed_time = fixed["time_min"]
+                    c.visit_min = fixed["duration_minutes"]
+                    c.appointment_label = f"Fixed at {fmt(c.fixed_time)}"
+                    c.reason = c.reason or c.appointment_label
                 c._raw = p
                 if c.score > 0 or must or using_list:
                     cands.append(c)
@@ -284,7 +321,8 @@ async def plan_stream(req: TripRequest):
             deadline = to_min(trip["end_time"], 1140)
             if deadline <= start_min:
                 deadline = min(1439, start_min + 60)
-            pts = [(hotel["lat"], hotel["lng"])] + [(c.lat, c.lng) for c in shortlist]
+            pts = ([(hotel["lat"], hotel["lng"])] + [(c.lat, c.lng) for c in shortlist]
+                   + [(end_place["lat"], end_place["lng"])])
             modes = ["WALK", "TRANSIT"] + (["DRIVE"] if trip["getting_around"] == "ride" else [])
             yield step_run("matrix", "Get travel times between every pair",
                            f"routes.computeRouteMatrix({len(pts)} x {len(pts)}, {', '.join(modes)})",
@@ -305,7 +343,7 @@ async def plan_stream(req: TripRequest):
 
             s = planner.Session(
                 id=uuid.uuid4().hex[:12], trip=trip, date=day.isoformat(), weekday=weekday,
-                utc_offset=utc_offset, sunset=sunset, hotel=hotel, cands=shortlist,
+                utc_offset=utc_offset, sunset=sunset, hotel=hotel, end=end_place, cands=shortlist,
                 walk=walk, walk_m=walk_m, transit=transit, drive=drive,
                 start=start_min, deadline=deadline, now=start_min, loc=0)
             for c in shortlist:
@@ -403,7 +441,7 @@ async def replan_stream(req: ReplanRequest):
                              f"arriving around {fmt(first['arrive'])}.")
                 else:
                     s.route = []
-                    story = f"Done with {s.cand(st['node']).name}. That was the last stop, so head back."
+                    story = f"Done with {s.cand(st['node']).name}. That was the last stop, so head to {s.end['name']}."
                 yield ev(type="step", key="done", status="ok", title="Nothing to re-plan",
                          result=f"You finished on schedule. The clock moved to {fmt(s.now)}.", fresh=True)
                 yield ev(type="plan", **_payload(s, story, planner.cut_reasons(s, nodes, s.route, s.now)))
@@ -448,7 +486,7 @@ async def replan_stream(req: ReplanRequest):
                      "skipped": s.cand(prev_next).name if req.event == "skip" and prev_next else None,
                      "next": (s.cand(res["stops"][0]["node"]).name + " at " + fmt(res["stops"][0]["arrive"]))
                      if res and res["stops"] else None,
-                     "back_at_hotel": fmt(res["end"]) if res else None}
+                     "back_at_end": fmt(res["end"]) if res else None}
             try:
                 story = await gemini.narrate_change(facts)
             except Exception:  # noqa: BLE001
@@ -483,7 +521,7 @@ async def _fetch_polylines(http, s):
     if not res:
         return
     legs = [(st["from"], st["node"], st["leg"]["mode"]) for st in res["stops"]]
-    legs.append((res["back"]["from"], 0, res["back"]["mode"]))
+    legs.append((res["back"]["from"], s.end_node, res["back"]["mode"]))
     todo = [k for k in legs if k not in s.polylines and k[0] != k[1]]
     got = await asyncio.gather(*(routes.polyline(http, s.point(a), s.point(b), MODE_API[m]) for a, b, m in todo),
                                return_exceptions=True)
@@ -495,7 +533,7 @@ async def _fetch_polylines(http, s):
 async def _story(s, cuts):
     res = planner.simulate(s, s.route, s.now, s.loc)
     if not res or not res["stops"]:
-        return (f"There isn't time for a stop and still being back by {fmt(s.deadline)}. "
+        return (f"There isn't time for a stop and still reaching {s.end['name']} by {fmt(s.deadline)}. "
                 "Try a later end time or a closer starting point.")
     facts = {
         "window": f"{fmt(s.start)} to {fmt(s.deadline)}",
@@ -503,7 +541,7 @@ async def _story(s, cuts):
                    "neighborhood": s.cand(x["node"]).zone_name, "notes": x["notes"]} for x in res["stops"]],
         "neighborhood_blocks": [b["zone"] for b in _blocks(s, res["stops"])] if s.blocks else [],
         "walking_km": res["walk_km"], "sunset": fmt(s.sunset) if s.sunset else None,
-        "left_out": cuts[:2], "back_at_hotel": fmt(res["end"]),
+        "left_out": cuts[:2], "finish_at": s.end["name"], "back_at_hotel": fmt(res["end"]),
         "traveler": {k: s.trip.get(k) for k in ("loves", "skips", "pace")},
     }
     try:
@@ -522,8 +560,8 @@ def _fallback_change(f):
         out.append(f"Added {', '.join(f['added'])}.")
     if f["next"]:
         out.append(f"Next up: {f['next']}.")
-    if f["back_at_hotel"]:
-        out.append(f"Back by {f['back_at_hotel']}.")
+    if f["back_at_end"]:
+        out.append(f"Finish by {f['back_at_end']}.")
     return " ".join(out) or "The plan still works as is."
 
 
@@ -537,6 +575,7 @@ def _stop_json(s, st, done):
             "visit": {"minutes": st["leave"] - st["begin"], "base": c.visit_min,
                       "source": c.visit_source, "evidence": c.evidence},
             "zone": c.zone_name, "kind": c.kind, "setting": c.setting, "reason": c.reason,
+            "fixed_time": c.fixed_time, "appointment_label": c.appointment_label,
             "rating": c.rating, "count": c.count, "maps_uri": c.maps_uri,
             "hours_known": c.hours_known,
             "opens": c.windows[0][0] if c.windows else None}
@@ -545,12 +584,12 @@ def _stop_json(s, st, done):
 def _payload(s, story, cuts):
     res = planner.simulate(s, s.route, s.now, s.loc)
     if res is None:  # out of time: just head back
-        back = planner.leg(s, s.loc, 0)
+        back = planner.leg(s, s.loc, s.end_node)
         res = {"stops": [], "back": {**back, "from": s.loc}, "end": s.now + back["min"],
                "travel": back["min"], "walk_km": back["km"] if back["mode"] == "walk" else 0}
         s.route = []
     back = dict(res["back"])
-    back["polyline"] = s.polylines.get((back["from"], 0, back["mode"]))
+    back["polyline"] = s.polylines.get((back["from"], s.end_node, back["mode"]))
     back.pop("from", None)
     done = [_stop_json(s, st, True) for st in s.completed]
     upcoming = [_stop_json(s, st, False) for st in res["stops"]]
@@ -562,7 +601,7 @@ def _payload(s, story, cuts):
         "session_id": s.id, "city": s.trip["city"], "date": s.date,
         "start": s.start, "deadline": s.deadline, "now": s.now, "sunset": s.sunset,
         "raining": s.raining, "tired": s.tired, "trip": s.trip,
-        "hotel": s.hotel, "at": s.hotel["name"] if s.loc == 0 else s.cand(s.loc).name,
+        "hotel": s.hotel, "end_place": s.end, "at": s.hotel["name"] if s.loc == 0 else s.cand(s.loc).name,
         "shifted": bool(s.completed and s.now != s.completed[-1]["leave"]) or (not s.completed and s.now != s.start),
         "completed": done, "stops": upcoming, "back": back, "end": res["end"],
         "blocks": _blocks(s, all_stops) if s.blocks else [],

@@ -27,15 +27,23 @@ def client() -> genai.Client:
 # Response schemas. Fields have no defaults on purpose: the Gemini API rejects
 # default values in response schemas, so "unknown" is an empty string or list.
 
+class ParsedAppointment(BaseModel):
+    place: str
+    time: str               # HH:MM (24h)
+    duration_minutes: int
+
+
 class ParsedTrip(BaseModel):
     city: str
     date: str               # YYYY-MM-DD or ""
     start_time: str         # HH:MM (24h) or ""
     end_time: str           # HH:MM (24h) or ""
     start_location: str     # hotel/address or ""
+    end_location: str       # station, airport, venue or ""
     loves: list[str]
     skips: list[str]
     must_see: list[str]
+    appointments: list[ParsedAppointment]
     pace: str               # relaxed | normal | packed
     getting_around: str     # walk | transit | ride
     by_neighborhood: bool
@@ -97,9 +105,12 @@ Rules:
 - start_time / end_time: 24-hour HH:MM for when they're free, else "".
   If they give a duration ("6 hours from 11am"), compute end_time.
 - start_location: hotel, Airbnb, address or neighborhood they're staying in, else "".
+- end_location: where they need to finish, if different from start_location, else "".
 - loves: short interest phrases they like ("architecture", "street food", "jazz bars").
 - skips: things they want to avoid ("museums", "crowds").
 - must_see: specific places they insist on.
+- appointments: fixed-time commitments like reservations, shows, tours or timed tickets.
+  Each item has place, HH:MM time, and duration_minutes. Use 60 minutes if not said.
 - pace: "packed" if they want to see as much as possible, "relaxed" if they want it easy, else "normal".
 - getting_around: "walk" if walking only, "ride" if they mention taxis, rideshare or robotaxis, else "transit".
 - by_neighborhood: false only if they explicitly want maximum stops regardless of back-and-forth; otherwise true."""
