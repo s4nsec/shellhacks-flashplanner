@@ -311,6 +311,9 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
         <option value="normal" selected>Normal</option>
         <option value="packed">Packed (quick visits)</option>
       </select>
+      <label for="budget">Budget</label>
+      <input type="number" id="budget" min="0" step="1" placeholder="No limit">
+      <p class="hint">Per person for tickets and meals, in the local currency.</p>
 
       <details class="more">
         <summary>Plan from a list you found online</summary>
@@ -414,6 +417,12 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmt=m=>{m=Math.round(m);const h=Math.floor(m/60)%24,mm=((m%60)+60)%60;return `${((h+11)%12)+1}:${String(mm).padStart(2,"0")} ${h>=12?"pm":"am"}`;};
+const money=(n,cur)=>{try{return new Intl.NumberFormat(undefined,{style:"currency",currency:cur,maximumFractionDigits:0}).format(n);}catch{return `${cur} ${n}`.trim();}};
+const priceText=pr=>{
+  if(pr.level)return "$".repeat(pr.level);
+  let low;try{low=new Intl.NumberFormat(undefined,{style:"currency",currency:pr.currency,currencyDisplay:"narrowSymbol",maximumFractionDigits:0}).format(pr.low);}catch{low=`$${pr.low}`;}
+  return pr.high?`${low}–${pr.high}`:`${low}+`;
+};
 const hm=m=>{m=Math.round(m);const h=Math.floor(m/60),mm=m%60;return h?`${h}h ${String(mm).padStart(2,"0")}m`:`${mm} min`;};
 const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const splitList=s=>s.split(/[,\n]/).map(x=>x.trim()).filter(Boolean);
@@ -468,6 +477,7 @@ function applyNotes(p){
   fill("#city",p.city,"city");fill("#date",p.date,"date");
   if(fill("#startLoc",p.start_location,"start_location"))clearStartPlace();
   fill("#endLoc",p.end_location,"end_location");
+  if(p.budget!=null&&$("#budget").value===""){$("#budget").value=p.budget;used.budget=p.budget;}
   const known=new Set([...S.likes,...S.skips,...splitList($("#moreLoves").value),...splitList($("#moreSkips").value)].map(norm));
   const addTags=(xs,set,tags,field,extra,key)=>{
     xs.forEach(x=>{if(known.has(norm(x)))return;known.add(norm(x));const t=PRESETS.find(q=>norm(q)===norm(x));
@@ -510,6 +520,7 @@ function readForm(){
     wheelchair_accessible:$("#wheelchair").checked,
     dietary_preferences:$("#diet").value?[$("#diet").value]:[],
     pace:$("#pace").value,getting_around:S.mode,
+    budget:$("#budget").value===""?null:Math.max(0,Math.round(Number($("#budget").value))),
     by_neighborhood:S.blocks,...(S.meals?{meals:S.meals}:{}),auto_breaks:S.autoBreaks!==false,notes:$("#msg").value.trim(),user_list:$("#userList").value.split("\n").map(x=>x.replace(/^\s*(\d+[.)]|[-*•])\s*/,"").trim()).filter(Boolean)};
 }
 
@@ -777,6 +788,7 @@ function renderItin(){
     if(st.wait>0&&st.opens!=null)meta+=`, opens ${fmt(st.opens)} so ${st.wait} min wait`;
     else if(st.wait>0)meta+=`, ${st.wait} min wait`;
     if(st.rating)meta+=`. Rated ${st.rating.toFixed(1)} (${(st.count||0).toLocaleString()})`;
+    if(st.price)meta+=`${st.rating?" · ":". "}${priceText(st.price)}`;
     const v=st.visit,quotes=(v.evidence||[]).filter(x=>x.quote),of=((v.evidence||[]).find(x=>x.of)||{}).of||quotes.length;
     const paced=v.minutes!==v.base?`, adjusted for ${esc(p.trip.pace)} pace`:"";
     let rv="";
@@ -799,6 +811,7 @@ function renderItin(){
   $("#itin").innerHTML=rows.join("");
   const sm=p.summary;
   $("#summary").innerHTML=`<strong>${sm.stops} stops</strong>${p.blocks.length?` in ${sm.zones} neighborhood${sm.zones>1?"s":""}`:""}, ${sm.walk_km.toFixed(1)} km walking, ${hm(sm.moving)} getting around. ${MODE_TXT[p.trip.getting_around]}, ${esc(p.trip.pace)} pace.`+
+    (sm.cost!=null?` About ${money(sm.cost,p.currency)} per person${p.budget!=null?` of your ${money(p.budget,p.currency)} budget`:""}.`:"")+
     (p.rain&&p.rain.length?` Rain likely ${p.rain.map(([a,b])=>`${fmt(a)} to ${fmt(b)}`).join(", ")}.`:p.forecast?" No rain in the forecast.":"");
   let cuts="";
   if(p.dropped&&p.dropped.length)cuts+=`<p class="dropped">Dropped in this re-plan: ${p.dropped.map(esc).join(", ")}</p>`;

@@ -15,7 +15,7 @@ Built for ShellHacks: the Waymo Mobility Challenge and Best Use of Gemini API.
 |---|---|---|
 | Read the optional "anything else" notes into settings | Gemini (structured output) | `server/gemini.py: parse_trip()` |
 | Find candidate places, hours, ratings | Places API (New) Text Search | `server/places.py: search_text()` |
-| Score each place for this traveler | Gemini | `server/gemini.py: score_places()` |
+| Score each place for this traveler, estimate tickets and meal prices | Gemini | `server/gemini.py: score_places()` |
 | Read up to 5 reviews per place for visit length | Places API + Gemini | `get_reviews()`, `estimate_visits()` |
 | Opening hours, neighborhoods, sunset | local | `places.py: opening_windows()`, `planner.py` |
 | Hourly rain forecast for the day | Weather API hourly forecast | `server/weather.py: hourly()` |
