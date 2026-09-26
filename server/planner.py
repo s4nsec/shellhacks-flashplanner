@@ -5,7 +5,8 @@ reach the requested end point by the deadline. Every place is optional (prize-co
 skipping one costs its score, so the solver fits the most valuable set of stops.
 Opening hours are time windows, visit lengths are service times, meals must land
 in lunch or dinner hours, viewpoints lean toward golden hour, and switching
-neighborhoods costs points so the day forms blocks.
+neighborhoods costs points so the day forms blocks. Hours with rain in the
+forecast make outdoor stops worth less, so they get pushed to dry hours.
 """
 import math
 from dataclasses import dataclass, field
@@ -78,12 +79,15 @@ class Session:
     completed: list = field(default_factory=list)
     skipped: set = field(default_factory=set)
     locked: set = field(default_factory=set)   # nodes the user forced into the plan
-    raining: bool = False
+    forecast: list = field(default_factory=list)            # hourly {hour, prob, mm}; empty if unavailable
+    rain_hours: set = field(default_factory=set)            # local hours when rain is expected
     tired: bool = False
     route: list = field(default_factory=list)
     initial_route: list = field(default_factory=list)
     meal_slot: dict = field(default_factory=dict)          # node -> "lunch" / "dinner" the solver picked
     initial_meal_slot: dict = field(default_factory=dict)
+    weather_slot: dict = field(default_factory=dict)       # node -> "dry" / "wet" the solver picked
+    initial_weather_slot: dict = field(default_factory=dict)
     polylines: dict = field(default_factory=dict)
     changed: set = field(default_factory=set)
     dropped: list = field(default_factory=list)
@@ -99,6 +103,15 @@ class Session:
             return (self.end_location["lat"], self.end_location["lng"])
         c = self.cand(node)
         return (c.lat, c.lng)
+
+    def wet(self, start: int, end: int | None = None) -> bool:
+        """Whether rain is expected at minute start, or anywhere in [start, end)."""
+        last = start if end is None else end - 1
+        return any(h in self.rain_hours for h in range(start // 60, last // 60 + 1))
+
+    @property
+    def raining(self) -> bool:
+        return self.wet(self.now)
 
     @property
     def mode(self) -> str:
@@ -171,12 +184,34 @@ def intersect(a: list, b: list) -> list:
     return sorted(out)
 
 
+def spells(hours: set) -> list:
+    """Runs of consecutive hours, as (start, end) minutes after midnight."""
+    out = []
+    for h in sorted(hours):
+        if out and out[-1][1] == 60 * h:
+            out[-1] = (out[-1][0], 60 * h + 60)
+        else:
+            out.append((60 * h, 60 * h + 60))
+    return out
+
+
+def complement(iv: list, lo: int = 0, hi: int = 1439) -> list:
+    out = []
+    for a, b in iv:
+        if a > lo:
+            out.append((lo, a - 1))
+        lo = max(lo, b + 1)
+    if lo <= hi:
+        out.append((lo, hi))
+    return out
+
+
 # ---------- per-node quantities ----------
 
-def points(s: Session, node: int) -> float:
+def points(s: Session, node: int, weather: str = "dry") -> float:
     c = s.cand(node)
     p = c.score / 4
-    if s.raining:
+    if weather == "wet":
         p *= RAIN_FACTOR.get(c.setting, 1)
     return p
 
@@ -190,13 +225,29 @@ def meals_had(s: Session) -> set:
     return {n for x in s.completed for n in x["notes"] if n in MEALS}
 
 
-def allowed_starts(s: Session, node: int, t0: int, slots: list = (LUNCH, DINNER)) -> list:
-    """Time intervals when a visit to this node may start. Meals must start in one of the slots."""
+def appointment_meal(c) -> str:
+    """Which meal a reservation stands in for: lunch before mid-afternoon, else dinner."""
+    return "lunch" if c.appointment_time < (LUNCH[1] + DINNER[0]) // 2 else "dinner"
+
+
+def allowed_starts(s: Session, node: int, t0: int, slots: list = (LUNCH, DINNER),
+                   weather: str | None = None) -> list:
+    """Time intervals when a visit to this node may start. Meals must start in one of the slots.
+    weather "dry" or "wet" keeps visits that count as out of or in the forecast rain."""
     c, v = s.cand(node), visit_len(s, node)
     iv = [(o, cl - v) for o, cl in c.windows if cl - v >= o]
     # An explicit reservation overrides the generic lunch/dinner suggestions.
     if c.kind == "meal" and c.appointment_time is None:
         iv = intersect(iv, list(slots))
+    if weather:
+        # Visits that are only partly in the rain count as whichever is worth less for this place.
+        dry = [(lo, hi - v) for lo, hi in spells(set(range(24)) - s.rain_hours) if hi - v >= lo]
+        wet = [(lo, hi - v) for lo, hi in spells(s.rain_hours) if hi - v >= lo]
+        if RAIN_FACTOR.get(c.setting, 1) < 1:
+            wet = complement(dry)
+        else:
+            dry = complement(wet)
+        iv = intersect(iv, dry if weather == "dry" else wet)
     return intersect(iv, [(t0, s.deadline - v)])
 
 
@@ -232,7 +283,7 @@ def simulate(s: Session, route: list, t0: int, start_node: int) -> dict | None:
         c = s.cand(node)
         pinned = s.meal_slot.get(node)
         slots = [MEALS[pinned]] if pinned else [w for m, w in MEALS.items() if m not in had]
-        starts = allowed_starts(s, node, t0, slots)
+        starts = allowed_starts(s, node, t0, slots, s.weather_slot.get(node))
         if c.appointment_time is not None:
             fixed = c.appointment_time
             begin = fixed if arrive <= fixed and any(lo <= fixed <= hi for lo, hi in starts) else None
@@ -248,9 +299,13 @@ def simulate(s: Session, route: list, t0: int, start_node: int) -> dict | None:
             notes.append("lunch")
         if c.kind == "meal" and DINNER[0] <= begin <= DINNER[1]:
             notes.append("dinner")
-        if (s.sunset and c.kind == "viewpoint" and c.setting != "indoor" and not s.raining
+        if c.kind == "meal" and c.appointment_time is not None and not set(notes) & set(MEALS):
+            notes.append(appointment_meal(c))
+        if (s.sunset and c.kind == "viewpoint" and c.setting != "indoor" and not s.wet(begin, leave)
                 and s.sunset - 80 <= begin <= s.sunset):
             notes.append("golden")
+        if s.wet(begin, leave):
+            notes.append("rain")
         had |= set(notes) & set(MEALS)
         stops.append({"node": node, "from": loc, "leg": L, "arrive": arrive, "begin": begin,
                       "wait": begin - arrive, "leave": leave, "notes": notes})
@@ -271,29 +326,46 @@ def simulate(s: Session, route: list, t0: int, start_node: int) -> dict | None:
 
 def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: int = 3) -> list:
     # A meal becomes one copy per meal slot still open (only one copy can be picked),
-    # so the solver can cap lunch and dinner at one each.
+    # so the solver can cap lunch and dinner at one each. A meal reservation is a
+    # single copy that counts as the meal nearest its time. Every place also gets a
+    # copy for visits that avoid forecast rain and one for visits that overlap it,
+    # worth RAIN_FACTOR as much.
     had = meals_had(s)
     snacked = any(s.cand(x["node"]).kind == "snack" for x in s.completed)
-    entries = []                                  # (node, meal slot or None)
+    entries = []                                  # (node, meal slot or None, "dry" / "wet")
     for k in cand_nodes:
         c = s.cand(k)
-        forced = c.must or c.appointment_time is not None or k in s.locked
-        if (c.score < MIN_SCORE or c.kind == "snack" and snacked) and not forced:
+        required = c.must or c.appointment_time is not None or k in s.locked
+        if (c.score < MIN_SCORE or c.kind == "snack" and snacked) and not required:
             continue
-        if c.kind == "meal" and c.appointment_time is None:
-            entries += [(k, m) for m, w in MEALS.items() if m not in had and allowed_starts(s, k, t0, [w])]
-        elif allowed_starts(s, k, t0):
-            # A reserved meal counts as the lunch or dinner its time falls in.
-            fixed = c.appointment_time if c.kind == "meal" else None
-            entries.append((k, next((m for m, (lo, hi) in MEALS.items()
-                                     if fixed is not None and lo <= fixed <= hi), None)))
-    nodes = [start_node, s.end_node] + [k for k, _ in entries]  # local 0 = start, local 1 = trip end
-    slot = [None, None] + [m for _, m in entries]
+        if c.kind == "meal" and c.appointment_time is not None:
+            meals = [appointment_meal(c) if appointment_meal(c) not in had else None]
+        elif c.kind == "meal":
+            meals = [x for x in MEALS if x not in had]
+        else:
+            meals = [None]
+        for m in meals:
+            slots = [MEALS[m]] if m else list(MEALS.values())
+            for w in ("dry", "wet"):
+                iv = allowed_starts(s, k, t0, slots, w)
+                if c.appointment_time is not None:   # only the copy whose weather covers the fixed time
+                    iv = [(lo, hi) for lo, hi in iv if lo <= c.appointment_time <= hi]
+                if iv:
+                    entries.append((k, m, w))
+    nodes = [start_node, s.end_node] + [k for k, _, _ in entries]  # local 0 = start, local 1 = trip end
+    slot = [None, None] + [m for _, m, _ in entries]
+    weather = [None, None] + [w for _, _, w in entries]
     n = len(nodes)
     T = [[0 if i == j else leg(s, nodes[i], nodes[j])["min"] for j in range(n)] for i in range(n)]
-    visit = [0, 0] + [visit_len(s, k) for k, _ in entries]
-    zone = [None, None] + [s.cand(k).zone for k, _ in entries]
+    visit = [0, 0] + [visit_len(s, k) for k, _, _ in entries]
+    zone = [None, None] + [s.cand(k).zone for k, _, _ in entries]
     start_zone = s.cand(start_node).zone if start_node != 0 else None
+    # Skipping a place costs its best copy's points; visiting a copy costs what it gives up against that.
+    value = [0, 0] + [points(s, k, w) for k, _, w in entries]
+    best = {}
+    for li in range(2, n):
+        best[nodes[li]] = max(best.get(nodes[li], 0), value[li])
+    extra = [0, 0] + [int((best[nodes[li]] - value[li]) * SCALE) for li in range(2, n)]
 
     manager = pywrapcp.RoutingIndexManager(n, 1, [0], [1])
     routing = pywrapcp.RoutingModel(manager)
@@ -308,7 +380,7 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
 
     def cost_cb(i, j):
         a, b = manager.IndexToNode(i), manager.IndexToNode(j)
-        c = travel_w * T[a][b]
+        c = travel_w * T[a][b] + extra[b]
         za = start_zone if a == 0 else zone[a]
         if switch and b >= 2 and za is not None and za != zone[b]:
             c += switch
@@ -337,7 +409,7 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
     copies = {}
     for li in range(2, n):
         k, idx = nodes[li], manager.NodeToIndex(li)
-        iv = allowed_starts(s, k, t0, [MEALS[slot[li]]] if slot[li] else list(MEALS.values()))
+        iv = allowed_starts(s, k, t0, [MEALS[slot[li]]] if slot[li] else list(MEALS.values()), weather[li])
         cum = time_dim.CumulVar(idx)
         c = s.cand(k)
         if c.appointment_time is not None:
@@ -348,13 +420,14 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
             for (_, hi), (lo, _) in zip(iv, iv[1:]):
                 if lo - hi > 1:
                     cum.RemoveInterval(hi + 1, lo - 1)
-        if s.sunset and c.kind == "viewpoint" and c.setting != "indoor" and not s.raining:
+        if s.sunset and c.kind == "viewpoint" and c.setting != "indoor" and not s.wet(s.sunset - 75, s.sunset):
             time_dim.SetCumulVarSoftLowerBound(idx, s.sunset - 75, 25)
             time_dim.SetCumulVarSoftUpperBound(idx, s.sunset, 50)
         copies.setdefault(k, []).append(idx)
     for k, idxs in copies.items():
         c = s.cand(k)
-        penalty = int(points(s, k) * SCALE) + (10**7 if c.must or c.appointment_time is not None or k in s.locked else 0)
+        required = c.must or c.appointment_time is not None or k in s.locked
+        penalty = int(best[k] * SCALE) + (10**7 if required else 0)
         routing.AddDisjunction(idxs, penalty)
 
     params = pywrapcp.DefaultRoutingSearchParameters()
@@ -365,12 +438,14 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
     sol = routing.SolveWithParameters(params)
     if sol is None:
         return []
-    route, s.meal_slot, i = [], {}, sol.Value(routing.NextVar(routing.Start(0)))
+    route, s.meal_slot, s.weather_slot = [], {}, {}
+    i = sol.Value(routing.NextVar(routing.Start(0)))
     while not routing.IsEnd(i):
         li = manager.IndexToNode(i)
         route.append(nodes[li])
         if slot[li]:
             s.meal_slot[nodes[li]] = slot[li]
+        s.weather_slot[nodes[li]] = weather[li]
         i = sol.Value(routing.NextVar(i))
     while route and simulate(s, route, t0, start_node) is None:
         route.pop()  # safety net; the model and simulate() use the same numbers
@@ -404,8 +479,8 @@ def cut_reasons(s: Session, cand_nodes: list, route: list, t0: int) -> list:
             why = "Its hours don't fit your time window"
         elif c.kind == "snack" and any(s.cand(x).kind == "snack" for x in in_plan):
             why = "One snack stop is enough for the day"
-        elif s.raining and c.setting == "outdoor":
-            why = "Outdoors, and it's raining"
+        elif c.setting == "outdoor" and not allowed_starts(s, k, t0, weather="dry"):
+            why = "Outdoors, and rain is expected whenever it would fit"
         elif s.blocks and c.zone not in zones:
             why = f"Would add a separate trip out to {c.zone_name}"
         else:

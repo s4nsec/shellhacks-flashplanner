@@ -562,12 +562,12 @@ function renderItin(){
   const stn=(st,num)=>{
     const tags=[];
     if(st.new)tags.push(`<span class="tag new">New</span>`);
-    if(!st.done&&st.locked)tags.push(`<span class="tag">${st.must?"Must-see":"Locked"}</span>`);
+    if(!st.done&&st.locked&&!st.fixed)tags.push(`<span class="tag">${st.must?"Must-see":"Locked"}</span>`);
     if(st.notes.includes("lunch"))tags.push(`<span class="tag gold">Lunch slot</span>`);
     if(st.notes.includes("dinner"))tags.push(`<span class="tag gold">Dinner slot</span>`);
     if(st.notes.includes("golden"))tags.push(`<span class="tag gold">Golden hour</span>`);
     if(st.notes.includes("appointment"))tags.push(`<span class="tag gold">Fixed time</span>`);
-    if(p.raining)tags.push(`<span class="tag rain">${st.setting==="outdoor"?"Outdoors":st.setting==="covered"?"Covered":"Indoors"}</span>`);
+    if(st.notes.includes("rain"))tags.push(`<span class="tag rain">${st.setting==="outdoor"?"Outdoors":st.setting==="covered"?"Covered":"Indoors"}</span>`);
     tags.push(`<span class="tag">${esc(st.kind)}</span>`);
     let meta=`${hm(st.visit.minutes)} here`;
     if(st.wait>0&&st.opens!=null)meta+=`, opens ${fmt(st.opens)} so ${st.wait} min wait`;
@@ -582,7 +582,7 @@ function renderItin(){
       else rv=`<div class="rv">Typical visit length for a ${esc(st.kind)}${paced}</div>`;
     }
     const name=st.maps_uri?`<a href="${esc(st.maps_uri)}" target="_blank" rel="noopener">${esc(st.name)}</a>`:esc(st.name);
-    return `<li class="stn${st.done?" done":""}${st.new?" new":""}"><span class="tm">${fmt(st.begin)}</span><span class="rail"><span class="dot">${st.done?"✓":num}</span></span><div class="body"><div class="nm">${st.done?"":`<button class="lock${st.locked?" on":""}" data-id="${esc(st.id)}" data-locked="${st.locked?1:0}"${st.must?" disabled":""} title="${st.must?"Must-see from your request":st.locked?"Let re-plans drop this stop":"Keep this stop through re-plans"}">${st.locked?"🔒 Locked":"Lock"}</button>`}${name}</div><div class="meta">${meta}</div>${!st.done&&st.reason?`<div class="why">${esc(st.reason)}</div>`:""}${rv}<div class="tags">${tags.join("")}</div></div></li>`;
+    return `<li class="stn${st.done?" done":""}${st.new?" new":""}"><span class="tm">${fmt(st.begin)}</span><span class="rail"><span class="dot">${st.done?"✓":num}</span></span><div class="body"><div class="nm">${st.done||!S.sid?"":`<button class="lock${st.locked?" on":""}" data-id="${esc(st.id)}" data-locked="${st.locked?1:0}"${st.must||st.fixed?" disabled":""} title="${st.fixed?"Fixed-time plan from your request":st.must?"Must-see from your request":st.locked?"Let re-plans drop this stop":"Keep this stop through re-plans"}">${st.locked?"🔒 Locked":"Lock"}</button>`}${name}</div><div class="meta">${meta}</div>${!st.done&&st.reason?`<div class="why">${esc(st.reason)}</div>`:""}${rv}<div class="tags">${tags.join("")}</div></div></li>`;
   };
   rows.push(`<li class="term"><span class="tm">${fmt(p.start)}</span><span class="rail"><span class="dot">H</span></span><div class="body"><div class="nm">${esc(p.hotel.name)}</div><div class="meta">Leave</div></div></li>`);
   let n=0;
@@ -594,10 +594,11 @@ function renderItin(){
   rows.push(`<li class="term"><span class="tm">${fmt(p.end)}</span><span class="rail"><span class="dot">${endsAtStart?"H":"E"}</span></span><div class="body"><div class="nm">Finish at ${esc(p.end_location.name)}</div><div class="meta">${p.deadline-p.end>0?`${hm(p.deadline-p.end)} to spare`:"Right on time"}</div></div></li>`);
   $("#itin").innerHTML=rows.join("");
   const sm=p.summary;
-  $("#summary").innerHTML=`<strong>${sm.stops} stops</strong>${p.blocks.length?` in ${sm.zones} neighborhood${sm.zones>1?"s":""}`:""}, ${sm.walk_km.toFixed(1)} km walking, ${hm(sm.moving)} getting around. ${MODE_TXT[p.trip.getting_around]}, ${esc(p.trip.pace)} pace.`;
+  $("#summary").innerHTML=`<strong>${sm.stops} stops</strong>${p.blocks.length?` in ${sm.zones} neighborhood${sm.zones>1?"s":""}`:""}, ${sm.walk_km.toFixed(1)} km walking, ${hm(sm.moving)} getting around. ${MODE_TXT[p.trip.getting_around]}, ${esc(p.trip.pace)} pace.`+
+    (p.rain&&p.rain.length?` Rain likely ${p.rain.map(([a,b])=>`${fmt(a)} to ${fmt(b)}`).join(", ")}.`:p.forecast?" No rain in the forecast.":"");
   let cuts="";
   if(p.dropped&&p.dropped.length)cuts+=`<p class="dropped">Dropped in this re-plan: ${p.dropped.map(esc).join(", ")}</p>`;
-  if(p.cuts.length)cuts+=`<details class="cuts"><summary>${p.cuts.length} places left out, and why</summary><ul>${p.cuts.map(c=>`<li><button class="putback" data-id="${esc(c.id)}"${NO_PUTBACK.includes(c.why)?" disabled":""}>Put it back</button>${esc(c.name)}<span>${esc(c.why)}</span></li>`).join("")}</ul></details>`;
+  if(p.cuts.length)cuts+=`<details class="cuts"><summary>${p.cuts.length} places left out, and why</summary><ul>${p.cuts.map(c=>`<li>${S.sid?`<button class="putback" data-id="${esc(c.id)}"${NO_PUTBACK.includes(c.why)?" disabled":""}>Put it back</button>`:""}${esc(c.name)}<span>${esc(c.why)}</span></li>`).join("")}</ul></details>`;
   cuts+=`<p class="attrib">Places, ratings and reviews from Google Maps. Travel times from the Google Routes API.</p>`;
   $("#cuts").innerHTML=cuts;
 }
