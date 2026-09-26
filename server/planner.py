@@ -66,6 +66,8 @@ class Cand:
     zone_name: str = ""
     must: bool = False
     appointment_time: int | None = None  # fixed local start time, minutes after midnight
+    accessibility: dict = field(default_factory=dict)
+    serves_vegetarian_food: bool | None = None
     break_stop: bool = False             # a café the solver may use for the coffee break
 
 

@@ -54,6 +54,28 @@ def fmt(m: int) -> str:
     return f"{(h + 11) % 12 + 1}:{mm:02d} {'pm' if h >= 12 else 'am'}"
 
 
+def preference_adjusted_score(score: int, kind: str, place: dict, trip: dict) -> tuple[int, str | None]:
+    """Apply hard evidence from Places after Gemini's preference-based score.
+
+    Missing attributes get a modest penalty because Google does not publish these
+    fields for every place; an explicit mismatch is excluded from the plan.
+    """
+    score = max(0, min(100, score))
+    if trip.get("wheelchair_accessible"):
+        entrance = place.get("accessibilityOptions", {}).get("wheelchairAccessibleEntrance")
+        if entrance is False:
+            return 0, "No wheelchair-accessible entrance is listed"
+        if entrance is None:
+            score = max(0, score - 15)
+    if kind == "meal" and trip.get("dietary_preferences"):
+        serves_vegetarian = place.get("servesVegetarianFood")
+        if serves_vegetarian is False:
+            return 0, "Doesn't match the requested diet"
+        if serves_vegetarian is None:
+            score = max(0, score - 15)
+    return score, None
+
+
 def ev(**kw) -> str:
     return json.dumps(kw, ensure_ascii=False) + "\n"
 
@@ -298,6 +320,8 @@ async def parse(req: ParseRequest):
         "end_location": p.end_location or None,
         "loves": p.loves, "skips": p.skips, "must_see": p.must_see,
         "appointments": [a.model_dump() for a in p.appointments],
+        "wheelchair_accessible": p.wheelchair_accessible,
+        "dietary_preferences": [d for d in p.dietary_preferences if d in {"vegetarian", "vegan"}],
         "pace": p.pace if p.pace in planner.PACE else "normal",
         "getting_around": p.getting_around if p.getting_around in MODE_API else "transit",
         "by_neighborhood": p.by_neighborhood,
@@ -438,25 +462,33 @@ async def plan_stream(req: TripRequest, persist: bool = True):
             brief = [{"id": p["id"], "name": places.display_name(p), "types": p.get("types", [])[:4],
                       "rating": p.get("rating"), "reviews": p.get("userRatingCount", 0),
                       "summary": p.get("editorialSummary", {}).get("text", ""),
+                      "accessibility_options": p.get("accessibilityOptions"),
+                      "serves_vegetarian_food": p.get("servesVegetarianFood"),
                       "must_see": "must" in flags.get(p["id"], set()),
                       "appointment": "appointment" in flags.get(p["id"], set())} for p in raw]
             judged = {j.id: j for j in await gemini.score_places(
-                {k: trip[k] for k in ("city", "loves", "skips", "must_see", "appointments", "pace", "notes")}, brief)}
+                {k: trip[k] for k in (
+                    "city", "loves", "skips", "must_see", "appointments", "pace", "notes",
+                    "wheelchair_accessible", "dietary_preferences",
+                )}, brief)}
             cands = []
             for p in raw:
                 j = judged.get(p["id"])
                 must = "must" in flags.get(p["id"], set())
+                kind = j.kind if j and j.kind in planner.KIND_DEFAULT_MIN else "sight"
+                score, mismatch = preference_adjusted_score(j.score if j else 30, kind, p, trip)
                 c = planner.Cand(
                     id=p["id"], name=places.display_name(p),
                     lat=p["location"]["latitude"], lng=p["location"]["longitude"],
                     rating=p.get("rating"), count=p.get("userRatingCount", 0),
                     maps_uri=p.get("googleMapsUri", ""), address=p.get("formattedAddress", ""),
                     list_rank=rank.get(p["id"], 999), hood=places.neighborhood(p),
-                    score=max(0, min(100, j.score)) if j else 30,
-                    kind=j.kind if j and j.kind in planner.KIND_DEFAULT_MIN else "sight",
+                    score=score, kind=kind,
                     setting=j.setting if j and j.setting in planner.RAIN_FACTOR else "indoor",
-                    reason=j.reason if j else "", must=must,
-                    appointment_time=appointment_times.get(p["id"]))
+                    reason=mismatch or (j.reason if j else ""), must=must,
+                    appointment_time=appointment_times.get(p["id"]),
+                    accessibility=p.get("accessibilityOptions", {}),
+                    serves_vegetarian_food=p.get("servesVegetarianFood"))
                 c.visit_min = planner.KIND_DEFAULT_MIN[c.kind]
                 c._raw = p
                 if c.score > 0 or must or c.appointment_time is not None or using_list:

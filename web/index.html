@@ -74,6 +74,8 @@ textarea{resize:vertical}
 .picked{margin:.3rem 0 0;font-size:.78rem;color:var(--muted);overflow-wrap:anywhere}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+.check{display:flex;align-items:center;gap:.5rem;margin:.85rem 0 0;font-size:.85rem;font-weight:600}
+.check input{width:1rem;height:1rem;margin:0;accent-color:var(--blue)}
 fieldset{border:0;padding:0;margin:0}
 .chips{display:flex;flex-wrap:wrap;gap:.4rem}
 .chip{border:1px solid var(--line);background:var(--land);border-radius:999px;padding:.3rem .7rem;font-size:.85rem;cursor:pointer}
@@ -269,6 +271,15 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
       <label for="mustSee">Must see</label>
       <input type="text" id="mustSee" placeholder="Comma-separated place names">
 
+      <div class="row2">
+        <label class="check" for="wheelchair"><input type="checkbox" id="wheelchair">Wheelchair accessible</label>
+        <div><label for="diet">Dietary preference</label><select id="diet">
+          <option value="">None</option>
+          <option value="vegetarian">Vegetarian</option>
+          <option value="vegan">Vegan</option>
+        </select></div>
+      </div>
+
       <fieldset>
         <legend class="lbl">Getting around</legend>
         <div class="seg" id="modeSeg">
@@ -425,6 +436,8 @@ function undoNotes(){
   a.likes.forEach(t=>S.likes.delete(t));a.skips.forEach(t=>S.skips.delete(t));
   const drop=(id,xs)=>{const gone=new Set(xs.map(norm));$(id).value=splitList($(id).value).filter(x=>!gone.has(norm(x))).join(", ");};
   drop("#moreLoves",a.moreLoves);drop("#moreSkips",a.moreSkips);drop("#mustSee",a.must);
+  if(a.wheelchair)$("#wheelchair").checked=false;
+  if(a.diet)$("#diet").value="";
   syncForm();
 }
 function applyNotes(p){
@@ -448,6 +461,12 @@ function applyNotes(p){
   if(a.must.length)used.must_see=a.must;
   S.appointments=p.appointments||[];
   if(S.appointments.length)used.appointments=S.appointments;
+  a.wheelchair=Boolean(p.wheelchair_accessible)&&!$("#wheelchair").checked;
+  if(a.wheelchair){$("#wheelchair").checked=true;used.wheelchair_accessible=true;}
+  const diet=(p.dietary_preferences||[]).includes("vegan")?"vegan":
+    (p.dietary_preferences||[]).includes("vegetarian")?"vegetarian":"";
+  a.diet=diet&&!$("#diet").value;
+  if(a.diet){$("#diet").value=diet;used.dietary_preferences=[diet];}
   // Meals and the coffee break come only from the notes; Gemini defaults them to lunch, dinner and a break.
   if(Array.isArray(p.meals)){S.meals=p.meals;
     if(p.meals.map(m=>m.name+m.time).join()!=="lunch12:30,dinner19:00")used.meals=p.meals;}
@@ -462,6 +481,8 @@ function readForm(){
     end_location:$("#endLoc").value.trim()||null,
     loves:[...S.likes,...splitList($("#moreLoves").value)],skips:[...S.skips,...splitList($("#moreSkips").value)],
     must_see:splitList($("#mustSee").value),appointments:S.appointments,
+    wheelchair_accessible:$("#wheelchair").checked,
+    dietary_preferences:$("#diet").value?[$("#diet").value]:[],
     pace:$("#pace").value,getting_around:S.mode,
     by_neighborhood:S.blocks,...(S.meals?{meals:S.meals}:{}),auto_breaks:S.autoBreaks!==false,notes:$("#msg").value.trim(),user_list:$("#userList").value.split("\n").map(x=>x.replace(/^\s*(\d+[.)]|[-*•])\s*/,"").trim()).filter(Boolean)};
 }

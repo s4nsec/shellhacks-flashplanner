@@ -35,6 +35,8 @@ class TripRequest(BaseModel):
     skips: list[str] = Field(default_factory=list)
     must_see: list[str] = Field(default_factory=list)
     appointments: list[Appointment] = Field(default_factory=list)  # fixed-time stops
+    wheelchair_accessible: bool = False
+    dietary_preferences: list[Literal["vegetarian", "vegan"]] = Field(default_factory=list)
     pace: Literal["relaxed", "normal", "packed"] = "normal"
     getting_around: Literal["walk", "transit", "ride"] = "transit"
     by_neighborhood: bool = True

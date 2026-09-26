@@ -19,7 +19,8 @@ class FrozenDatetime(datetime):
 def parsed(**kw) -> gemini.ParsedTrip:
     fields = dict(city="Tokyo", date="", relative_day="", start_time="", end_time="",
                   start_location="", end_location="", loves=[], skips=[], must_see=[],
-                  appointments=[], pace="normal", getting_around="transit",
+                  appointments=[], wheelchair_accessible=False, dietary_preferences=[],
+                  pace="normal", getting_around="transit",
                   by_neighborhood=True, meals=[gemini.ParsedMeal(name="lunch", time="12:30")],
                   auto_breaks=True)
     fields.update(kw)

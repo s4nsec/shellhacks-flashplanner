@@ -49,6 +49,8 @@ class ParsedTrip(BaseModel):
     skips: list[str]
     must_see: list[str]
     appointments: list[ParsedAppointment]
+    wheelchair_accessible: bool
+    dietary_preferences: list[str]  # vegetarian | vegan
     pace: str               # relaxed | normal | packed
     getting_around: str     # walk | transit | ride
     by_neighborhood: bool
@@ -122,6 +124,8 @@ Rules:
 - must_see: specific places they insist on.
 - appointments: fixed-time reservations, tickets, or events as place + 24-hour
   HH:MM time (for example, Joe Beef at 19:30). Do not put ordinary preferences here.
+- wheelchair_accessible: true when the traveler needs wheelchair-accessible places.
+- dietary_preferences: include "vegetarian" and/or "vegan" only when requested.
 - pace: "packed" if they want to see as much as possible, "relaxed" if they want it easy, else "normal".
 - getting_around: "walk" if walking only, "ride" if they mention taxis, rideshare or robotaxis, else "transit".
 - by_neighborhood: false only if they explicitly want maximum stops regardless of back-and-forth; otherwise true.
@@ -145,6 +149,10 @@ For EVERY candidate return:
 - score: 0-100, how worthwhile this place is for THIS traveler on a short visit.
   Reward matches with "loves", give places that match "skips" under 20, and give "must_see" and
   appointment places 95+.
+  If wheelchair_accessible is true, heavily penalize candidates whose accessibilityOptions do not
+  confirm an accessible entrance. For meal candidates, heavily penalize places that explicitly do
+  not serve vegetarian food when vegetarian or vegan food is requested. Treat missing Places data
+  as uncertainty rather than proof that a place is inaccessible or unsuitable.
   Give 0 to things that aren't worth a tourist's time (hotels, generic shops, offices,
   transit stations, duplicates of another candidate).
 - kind: one of sight, museum, meal, snack, market, park, viewpoint, shopping, nightlife, other.
