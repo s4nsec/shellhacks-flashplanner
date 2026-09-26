@@ -29,5 +29,6 @@ class InterpretRequest(BaseModel):
 
 class ReplanRequest(BaseModel):
     session_id: str
-    event: str                            # done | rain | late | tired | skip | reset
+    event: str                            # done | rain | late | tired | skip | reset | include | lock | unlock
     delay_minutes: int = 40
+    place_id: Optional[str] = None        # for include | lock | unlock

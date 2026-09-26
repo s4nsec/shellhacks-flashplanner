@@ -74,6 +74,7 @@ class Session:
     loc: int = 0
     completed: list = field(default_factory=list)
     skipped: set = field(default_factory=set)
+    locked: set = field(default_factory=set)   # nodes the user forced into the plan
     raining: bool = False
     tired: bool = False
     route: list = field(default_factory=list)
@@ -263,7 +264,7 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
     entries = []                                  # (node, meal slot or None)
     for k in cand_nodes:
         c = s.cand(k)
-        if (c.score < MIN_SCORE or c.kind == "snack" and snacked) and not c.must:
+        if (c.score < MIN_SCORE or c.kind == "snack" and snacked) and not (c.must or k in s.locked):
             continue
         if c.kind == "meal":
             entries += [(k, m) for m, w in MEALS.items() if m not in had and allowed_starts(s, k, t0, [w])]
@@ -329,7 +330,7 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
             time_dim.SetCumulVarSoftUpperBound(idx, s.sunset, 50)
         copies.setdefault(k, []).append(idx)
     for k, idxs in copies.items():
-        penalty = int(points(s, k) * SCALE) + (10**7 if s.cand(k).must else 0)
+        penalty = int(points(s, k) * SCALE) + (10**7 if s.cand(k).must or k in s.locked else 0)
         routing.AddDisjunction(idxs, penalty)
 
     params = pywrapcp.DefaultRoutingSearchParameters()
@@ -385,5 +386,5 @@ def cut_reasons(s: Session, cand_nodes: list, route: list, t0: int) -> list:
             why = f"Would add a separate trip out to {c.zone_name}"
         else:
             why = "Less worth it per minute than the stops that made the cut"
-        out.append({"name": c.name, "why": why, "score": c.score})
+        out.append({"id": c.id, "name": c.name, "why": why, "score": c.score})
     return sorted(out, key=lambda x: -x["score"])
