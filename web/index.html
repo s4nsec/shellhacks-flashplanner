@@ -58,7 +58,7 @@ a{color:var(--blue)}
 @media (max-width:1180px){.grid{grid-template-columns:330px minmax(0,1fr)}.col-l{grid-row:1 / span 2}}
 @media (max-width:760px){
   .grid{display:flex;flex-direction:column}.col{display:contents}
-  #tripForm{order:1}.story{order:2}.mapwrap{order:3}.itin{order:4}.tracep{order:6}
+  #tripForm{order:1}.mapwrap{order:3}.itin{order:4}.tracep{order:6}
 }
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:1.1rem}
 .panelhead{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;margin-bottom:.75rem}
@@ -127,12 +127,6 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
 .empty{color:var(--muted);font-size:.88rem;margin:0;padding:0!important}
 #trace li.empty::before{display:none}
 @keyframes pulse{50%{opacity:.35}}
-
-.story{display:flex;gap:.9rem;align-items:flex-start}
-.story svg{flex:none;margin-top:.15rem}
-#story{margin:0;font-family:var(--serif);font-size:1.08rem;line-height:1.6;max-width:68ch}
-.story.error{border-color:var(--bad);background:var(--badsoft)}
-.story.error #story{font-family:var(--sans);font-size:.95rem;color:var(--bad)}
 
 .mapwrap{padding:.6rem}
 #gmap{width:100%;height:min(640px,70vh);border-radius:10px;overflow:hidden;background:var(--land)}
@@ -321,10 +315,6 @@ details.more summary{min-height:44px;display:flex;align-items:center;color:var(-
 .results-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;padding:clamp(1rem,5vw,4rem) 0 2rem}
 .results-hero h1{font-size:clamp(3rem,12vw,7rem)}
 .edit-trip{flex:none;padding-inline:1rem}
-.story{background:var(--ink);color:var(--panel);padding:1.1rem;border-radius:10px;align-items:center}
-.story-mark{display:grid;place-items:center;flex:none;width:2.35rem;height:2.35rem;border:2px solid var(--gold);border-radius:50%;font-size:.65rem;font-weight:800;color:var(--gold)}
-#story{font-size:1rem;max-width:none}
-.story.error{background:var(--badsoft);color:var(--bad)}
 .result-toolbar{display:flex;flex-direction:column;gap:.75rem;padding:1rem 0 .5rem}
 .result-toolbar .day-tabs{margin:0}
 .export-actions{justify-content:flex-start}
@@ -373,7 +363,6 @@ details.more summary{min-height:44px;display:flex;align-items:center;color:var(-
   .result-pane.mobile-hidden{display:block}
   .mapwrap{position:sticky;top:1rem}
   #gmap{height:min(680px,72vh)}
-  .story{padding:1.25rem 1.5rem}
 }
 @media (min-width:1200px){
   .setup-layout{grid-template-columns:minmax(0,820px) 380px;gap:2rem}
@@ -536,11 +525,6 @@ details.more summary{min-height:44px;display:flex;align-items:center;color:var(-
       </div>
       <button class="secondary edit-trip" id="editTripBtn" type="button">Edit trip</button>
     </header>
-
-    <section class="story" id="storyBox" aria-live="polite">
-      <span class="story-mark" aria-hidden="true">FP</span>
-      <p id="story">Your route story will appear here.</p>
-    </section>
 
     <div class="result-toolbar">
       <div class="day-tabs" id="dayTabs" role="group" hidden aria-label="Trip days"></div>
@@ -886,8 +870,7 @@ function traceStep(e){
 }
 function failRunning(){ $$("#trace li.run").forEach(li=>{li.className="fail";}); }
 
-function setStory(text,isError=false){
-  $("#story").textContent=text;$("#storyBox").classList.toggle("error",isError);
+function setStory(text,isError=false){  // status and errors show on the loading screen
   if(S.view==="loading")$("#loadingSummary").textContent=text;
   $("#loadingView").classList.toggle("has-error",isError);
 }
