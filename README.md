@@ -70,6 +70,7 @@ You need Python 3.10 or newer.
 ## HTTP API
 
 - `GET /api/config`: which keys are set, and the browser map key.
+- `GET /api/demo`: static no-key Montreal plan for judging or screenshots.
 - `POST /api/parse` `{message}`: Gemini turns a message into trip settings.
 - `POST /api/plan` with the trip settings: streams newline-delimited JSON,
   one `step` event per stage, then a `plan` event (or an `error` event).

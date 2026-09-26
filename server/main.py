@@ -24,6 +24,9 @@ from .models import InterpretRequest, ParseRequest, ReplanRequest, TripRequest
 app = FastAPI(title="Sightline")
 WEB = Path(__file__).resolve().parent.parent / "web"
 SESSIONS: dict[str, planner.Session] = {}   # in memory, one per planned day
+SESSION_TOUCHED: dict[str, float] = {}
+SESSION_TTL_SECONDS = 6 * 60 * 60
+MAX_SESSIONS = 50
 SHORTLIST = 20        # places that get reviews, travel times and a place in the solver
 MAX_CANDIDATES = 40   # places Gemini scores
 MODE_API = {"walk": "WALK", "transit": "TRANSIT", "ride": "DRIVE"}
@@ -79,6 +82,36 @@ def missing_keys_message() -> str | None:
     return None
 
 
+def evict_old_sessions(now: float | None = None) -> None:
+    if now is None:
+        now = time.time()
+    cutoff = now - SESSION_TTL_SECONDS
+    expired = [sid for sid, touched in SESSION_TOUCHED.items() if touched < cutoff]
+    for sid in expired:
+        SESSION_TOUCHED.pop(sid, None)
+        SESSIONS.pop(sid, None)
+    if len(SESSIONS) <= MAX_SESSIONS:
+        return
+    oldest = sorted(SESSION_TOUCHED, key=SESSION_TOUCHED.get)
+    for sid in oldest[:len(SESSIONS) - MAX_SESSIONS]:
+        SESSION_TOUCHED.pop(sid, None)
+        SESSIONS.pop(sid, None)
+
+
+def remember_session(s: planner.Session) -> None:
+    SESSION_TOUCHED[s.id] = time.time()
+    SESSIONS[s.id] = s
+    evict_old_sessions()
+
+
+def get_session(session_id: str) -> planner.Session | None:
+    evict_old_sessions()
+    s = SESSIONS.get(session_id)
+    if s:
+        SESSION_TOUCHED[session_id] = time.time()
+    return s
+
+
 # ---------- pages & config ----------
 
 @app.get("/")
@@ -90,6 +123,80 @@ def index():
 def get_config():
     return {"mapsKey": config.MAPS_BROWSER_KEY, "mapId": config.MAP_ID,
             "missing": config.missing_keys(), "model": config.GEMINI_MODEL}
+
+
+@app.get("/api/demo")
+def demo_plan():
+    """Static Montreal plan for judging tables when API keys or quotas are unavailable."""
+    hotel = {"name": "Sheraton Montreal downtown", "lat": 45.5009, "lng": -73.5738}
+    stops = [
+        _demo_stop("Notre-Dame Basilica", 45.5045, -73.5561, 615, 625, 685, "Vieux-Montreal",
+                   "sight", "indoor", "Iconic architecture and a compact first stop.", 4.7, 38215,
+                   {"mode": "transit", "min": 10, "km": 1.5}, "reviews"),
+        _demo_stop("Old Port of Montreal", 45.5076, -73.5517, 693, 693, 743, "Vieux-Montreal",
+                   "park", "outdoor", "Waterfront views without committing the whole day.", 4.6, 30144,
+                   {"mode": "walk", "min": 8, "km": 0.6}, "gemini"),
+        _demo_stop("Jean-Talon Market", 45.5352, -73.6141, 770, 770, 840, "Little Italy",
+                   "meal", "covered", "Lunch fits the food brief and keeps the route lively.", 4.6, 28102,
+                   {"mode": "transit", "min": 27, "km": 5.8}, "reviews", ["lunch"]),
+        _demo_stop("Mount Royal Lookout", 45.5039, -73.5878, 915, 915, 960, "Mount Royal",
+                   "viewpoint", "outdoor", "Best city view near golden hour.", 4.8, 19762,
+                   {"mode": "transit", "min": 35, "km": 6.2}, "default", ["golden"]),
+        _demo_stop("Bar George", 45.5016, -73.5766, 982, 1050, 1110, "Downtown",
+                   "meal", "indoor", "Dinner lands close to the hotel in a historic room.", 4.4, 3951,
+                   {"mode": "walk", "min": 22, "km": 1.4}, "gemini", ["dinner"]),
+    ]
+    back = {"mode": "walk", "min": 7, "km": 0.5, "polyline": None}
+    return {
+        "session_id": "demo", "demo": True, "city": "Montreal", "date": Date.today().isoformat(),
+        "start": 600, "deadline": 1140, "now": 600, "sunset": 1115,
+        "raining": False, "tired": False,
+        "trip": {"city": "Montreal", "date": None, "start_time": "10:00", "end_time": "19:00",
+                 "start_location": "Sheraton downtown", "loves": ["architecture", "food", "views"],
+                 "skips": ["museums"], "must_see": [], "pace": "normal",
+                 "getting_around": "transit", "by_neighborhood": True, "user_list": []},
+        "hotel": hotel, "at": hotel["name"], "shifted": False,
+        "completed": [], "stops": stops, "back": back, "end": 1117,
+        "blocks": [
+            {"zone": "Vieux-Montreal", "from": 625, "to": 743, "count": 2},
+            {"zone": "Little Italy", "from": 770, "to": 840, "count": 1},
+            {"zone": "Mount Royal", "from": 915, "to": 960, "count": 1},
+            {"zone": "Downtown", "from": 1050, "to": 1110, "count": 1},
+        ],
+        "summary": {"stops": 5, "walk_km": 2.5, "moving": 109, "zones": 4},
+        "others": [
+            {"name": "Montreal Museum of Fine Arts", "lat": 45.4986, "lng": -73.5795},
+            {"name": "La Fontaine Park", "lat": 45.5278, "lng": -73.5690},
+            {"name": "Atwater Market", "lat": 45.4793, "lng": -73.5779},
+        ],
+        "cuts": [
+            {"name": "Montreal Museum of Fine Arts", "why": "Museums were on the skip list", "score": 20},
+            {"name": "La Fontaine Park", "why": "Would add a separate trip east", "score": 48},
+            {"name": "Atwater Market", "why": "Jean-Talon was a stronger food stop", "score": 56},
+        ],
+        "dropped": [],
+        "story": ("Demo plan: five stops fit between 10:00 am and 7:00 pm, grouped into neighborhood blocks "
+                  "so the day is easy to explain to judges. Lunch lands at Jean-Talon Market, the lookout is "
+                  "timed near sunset, and you're back downtown with time to spare."),
+        "compare": {
+            "window": 540,
+            "plan": {"stops": 5, "see": 295, "travel": 109, "waited": 68},
+            "naive": {"stops": 4, "see": 230, "travel": 156, "waited": 35},
+        },
+    }
+
+
+def _demo_stop(name, lat, lng, arrive, begin, leave, zone, kind, setting, reason,
+               rating, count, leg, source, notes=None):
+    return {
+        "id": "demo-" + name.lower().replace(" ", "-"),
+        "name": name, "lat": lat, "lng": lng,
+        "arrive": arrive, "begin": begin, "wait": begin - arrive, "leave": leave,
+        "leg": {**leg, "polyline": None}, "notes": notes or [], "done": False, "new": False,
+        "visit": {"minutes": leave - begin, "base": leave - begin, "source": source, "evidence": []},
+        "zone": zone, "kind": kind, "setting": setting, "reason": reason,
+        "rating": rating, "count": count, "maps_uri": "", "hours_known": True, "opens": None,
+    }
 
 
 # ---------- 1. understand the message ----------
@@ -330,7 +437,7 @@ async def plan_stream(req: TripRequest):
                 nb = len(_blocks(s, res["stops"]))
                 blocks_txt = f" Grouped into {nb} neighborhood block{'s' if nb > 1 else ''}."
             yield step_ok("solve", t0, f"Picked {len(s.route)} of {len(nodes)} places.{blocks_txt}")
-            SESSIONS[s.id] = s
+            remember_session(s)
 
             yield step_run("shapes", "Draw the real routes", "routes.computeRoutes(each leg)",
                            "server/routes.py: polyline()")
@@ -353,7 +460,7 @@ async def plan_stream(req: TripRequest):
 
 @app.post("/api/interpret")
 async def interpret(req: InterpretRequest):
-    s = SESSIONS.get(req.session_id)
+    s = get_session(req.session_id)
     if not s:
         raise HTTPException(404, "That plan has expired. Plan the day again.")
     nxt = s.cand(s.route[0]).name if s.route else None
@@ -370,7 +477,7 @@ async def replan(req: ReplanRequest):
 
 
 async def replan_stream(req: ReplanRequest):
-    s = SESSIONS.get(req.session_id)
+    s = get_session(req.session_id)
     if not s:
         yield ev(type="error", message="That plan has expired. Plan the day again.")
         return

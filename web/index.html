@@ -55,6 +55,10 @@ a{color:var(--blue)}
   #tripForm{order:1}.story{order:2}.mapwrap{order:3}#events{order:4}.itin{order:5}.compare{order:6}.tracep{order:7}
 }
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:1.1rem}
+.panelhead{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.75rem}
+.panelhead h2{margin:0}
+.smallbtn{border:1px solid var(--line);background:var(--land);border-radius:8px;padding:.28rem .55rem;font-size:.8rem;font-weight:700;cursor:pointer}
+.smallbtn:disabled{opacity:.45;cursor:not-allowed}
 
 label,.lbl{display:block;font-size:.85rem;font-weight:600;margin:.85rem 0 .35rem}
 textarea,select,input[type=time],input[type=date],input[type=text]{width:100%;border:1px solid var(--line);border-radius:10px;background:var(--land);padding:.55rem .65rem}
@@ -75,8 +79,12 @@ fieldset{border:0;padding:0;margin:0}
 .seg button[aria-pressed=true]{background:var(--ink);color:var(--panel);font-weight:600}
 details.more{margin-top:.9rem;border-top:1px solid var(--line);padding-top:.7rem}
 details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
-.primary{display:block;width:100%;margin-top:1.1rem;border:0;border-radius:12px;background:var(--blue);color:#fff;font-weight:700;font-stretch:110%;font-size:1rem;padding:.8rem;cursor:pointer}
+.actions{display:grid;grid-template-columns:1fr auto;gap:.55rem;margin-top:1.1rem}
+.primary,.secondary{border:0;border-radius:12px;font-weight:700;font-stretch:110%;font-size:1rem;padding:.8rem;cursor:pointer}
+.primary{background:var(--blue);color:#fff}
 .primary:disabled{opacity:.6;cursor:progress}
+.secondary{background:var(--land);border:1px solid var(--line);color:var(--ink);white-space:nowrap}
+.secondary:disabled{opacity:.6;cursor:progress}
 
 #clock{margin:0 0 .8rem;font-size:.9rem;color:var(--muted)}
 #clock strong{color:var(--ink)}
@@ -270,7 +278,10 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
         <p class="hint">When this has names, the plan uses only these places (plus your must-sees).</p>
       </details>
 
-      <button class="primary" id="planBtn" type="button">Plan my day</button>
+      <div class="actions">
+        <button class="primary" id="planBtn" type="button">Plan my day</button>
+        <button class="secondary" id="demoBtn" type="button">Demo</button>
+      </div>
     </section>
 
     <section class="panel" id="events" aria-labelledby="h-live">
@@ -335,7 +346,10 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
 
   <div class="col col-r">
     <section class="panel itin" aria-labelledby="h-itin">
-      <h2 id="h-itin">Itinerary</h2>
+      <div class="panelhead">
+        <h2 id="h-itin">Itinerary</h2>
+        <button class="smallbtn" id="copyBtn" type="button" disabled>Copy</button>
+      </div>
       <div id="summary">Your stops will line up here like stations on a transit line.</div>
       <ol id="itin"></ol>
       <div id="cuts"></div>
@@ -433,7 +447,10 @@ function traceStep(e){
 function failRunning(){ $$("#trace li.run").forEach(li=>{li.className="fail";}); }
 
 function setStory(text,isError=false){$("#story").textContent=text;$("#storyBox").classList.toggle("error",isError);}
-function setBusy(b){S.busy=b;$("#planBtn").disabled=b;$("#planBtn").textContent=b?"Planning…":"Plan my day";renderEvents();}
+function setBusy(b){
+  S.busy=b;$("#planBtn").disabled=b;$("#demoBtn").disabled=b;
+  $("#planBtn").textContent=b?"Planning…":"Plan my day";renderEvents();
+}
 
 /* ============ plan & replan ============ */
 async function planDay(){
@@ -450,6 +467,19 @@ async function planDay(){
     if(!body.city){setStory("Add the city you're visiting, then plan again.",true);return;}
     setStory(`Planning your day in ${body.city}…`);
     await stream("/api/plan",body,handleEvent);
+  }catch(err){failRunning();setStory(err.message,true);}
+  finally{setBusy(false);}
+}
+async function loadDemo(){
+  if(S.busy)return;setBusy(true);traceReset();
+  try{
+    traceStep({key:"demo",status:"run",title:"Load judge demo",call:"GET /api/demo",source:"server/main.py: demo_plan()"});
+    const t0=performance.now();
+    const r=await fetch("/api/demo");
+    if(!r.ok)throw new Error(await errorText(r));
+    S.plan=await r.json();S.sid=null;
+    traceStep({key:"demo",status:"ok",result:"Loaded a static Montreal plan for no-key judging.",ms:Math.round(performance.now()-t0)});
+    renderAll();
   }catch(err){failRunning();setStory(err.message,true);}
   finally{setBusy(false);}
 }
@@ -483,10 +513,15 @@ function handleEvent(e){
 function renderAll(){
   setStory(S.plan.story||"");
   renderItin();renderEvents();renderCompare();MapView.draw(S.plan);
+  $("#copyBtn").disabled=!S.plan;
 }
 function renderEvents(){
-  const p=S.plan,has=!!p&&!S.busy,rem=has&&p.stops.length>0;
-  $("#clock").innerHTML=p?`It's <strong>${fmt(p.now)}</strong> and you're at <strong>${esc(p.at)}</strong>.${p.raining?" It's raining.":""}`:"Plan a day first, then tell the agent when things change.";
+  const p=S.plan,demo=!!p?.demo,has=!!p&&!S.busy&&!demo,rem=has&&p.stops.length>0;
+  $("#clock").innerHTML=p
+    ? demo
+      ? `Demo plan loaded. Add API keys to re-plan live.`
+      : `It's <strong>${fmt(p.now)}</strong> and you're at <strong>${esc(p.at)}</strong>.${p.raining?" It's raining.":""}`
+    : "Plan a day first, then tell the agent when things change.";
   const set=(k,on)=>{$(`.ev[data-ev=${k}]`).disabled=!on;};
   set("done",rem);set("skip",rem);set("rain",has&&!p.raining);set("tired",has&&!p.tired);set("late",has&&rem);set("reset",has);
   $("#lateDelay").disabled=!(has&&rem);
@@ -552,6 +587,42 @@ function renderCompare(){
   const row=(label,x)=>`<div class="nm">${label}<small>${x.stops} stops, ${hm(x.travel)} moving</small></div><div class="bar" role="img" aria-label="${label}: ${hm(x.see)} sightseeing, ${hm(x.travel)} getting around, ${hm(x.waited)} waiting"><span class="see" style="width:${pct(x.see)}"></span><span class="move" style="width:${pct(x.travel)}"></span><span class="waitb" style="width:${pct(x.waited)}"></span></div>`;
   $("#bars").innerHTML=row("Sightline",c.plan)+row("List order",c.naive);
 }
+function itineraryText(p){
+  const lines=[
+    `Sightline plan for ${p.city} (${p.date})`,
+    `${fmt(p.start)} leave ${p.hotel.name}; back around ${fmt(p.end)}`,
+    `${p.summary.stops} stops, ${p.summary.walk_km.toFixed(1)} km walking, ${hm(p.summary.moving)} moving`,
+    ""
+  ];
+  let n=1;
+  p.completed.concat(p.stops).forEach(st=>{
+    lines.push(`${n}. ${fmt(st.begin)}-${fmt(st.leave)} ${st.name} (${hm(st.visit.minutes)})`);
+    lines.push(`   ${legText(st.leg)} from previous stop`);
+    if(st.reason)lines.push(`   Why: ${st.reason}`);
+    n+=1;
+  });
+  lines.push(`Return: ${legText(p.back)}; arrive ${fmt(p.end)}`);
+  if(p.cuts.length){
+    lines.push("", "Left out:");
+    p.cuts.slice(0,5).forEach(c=>lines.push(`- ${c.name}: ${c.why}`));
+  }
+  return lines.join("\n");
+}
+async function copyPlan(){
+  if(!S.plan)return;
+  const text=itineraryText(S.plan),btn=$("#copyBtn"),old=btn.textContent;
+  try{
+    if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(text);
+    else{
+      const ta=document.createElement("textarea");ta.value=text;ta.style.position="fixed";ta.style.opacity="0";
+      document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();
+    }
+    btn.textContent="Copied";
+  }catch{
+    btn.textContent="Copy failed";
+  }
+  setTimeout(()=>{btn.textContent=old;},1200);
+}
 
 /* ============ map: Google Maps if a browser key is set, else a simple SVG ============ */
 function decodePolyline(str){
@@ -582,7 +653,14 @@ const MapView={
     $("#gmap").innerHTML=`<svg id="svgmap" role="img" aria-label="Route sketch"></svg>`;$("#gmap").style.height="auto";
     $("#mapNote").textContent=cfg.mapsKey?"Google map failed to load, showing a sketch.":"Add GOOGLE_MAPS_BROWSER_KEY for a real map.";
   },
-  draw(p){this.kind==="google"?this.drawGoogle(p):this.drawSvg(p);},
+  draw(p){
+    if(!this.kind){
+      this.kind="svg";
+      $("#gmap").innerHTML=`<svg id="svgmap" role="img" aria-label="Route sketch"></svg>`;
+      $("#gmap").style.height="auto";
+    }
+    this.kind==="google"?this.drawGoogle(p):this.drawSvg(p);
+  },
   pin(cls,text){const d=document.createElement("div");d.className="pin "+cls;d.textContent=text||"";return d;},
   drawGoogle(p){
     if(!this.map)this.map=new google.maps.Map($("#gmap"),{center:{lat:p.hotel.lat,lng:p.hotel.lng},zoom:13,mapId:this.mapId,disableDefaultUI:true,zoomControl:true,fullscreenControl:true});
@@ -640,11 +718,13 @@ function loadGoogleMaps(key){
   let cfg={mapsKey:"",missing:[]};
   try{const r=await fetch("/api/config");cfg=await r.json();}
   catch{$("#status").textContent="Can't reach the server. Start it with: uvicorn server.main:app";$("#status").classList.add("bad");}
-  if(cfg.missing&&cfg.missing.length){$("#status").textContent=`Missing ${cfg.missing.join(" and ")} in .env`;$("#status").classList.add("bad");}
+  if(cfg.missing&&cfg.missing.length){$("#status").textContent=`Missing ${cfg.missing.join(" and ")} in .env; use Demo for judging without keys`;$("#status").classList.add("bad");}
   else if(cfg.model)$("#status").textContent=`Connected: ${cfg.model}, Places API, Routes API`;
   await MapView.init(cfg);
 })();
 $("#planBtn").addEventListener("click",planDay);
+$("#demoBtn").addEventListener("click",loadDemo);
+$("#copyBtn").addEventListener("click",copyPlan);
 $$(".ev").forEach(b=>b.addEventListener("click",()=>{
   const delay=b.dataset.ev==="late"?Number($("#lateDelay").value)||30:30;
   replan(b.dataset.ev,delay);
