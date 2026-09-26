@@ -19,7 +19,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 
-from . import config, gemini, places, planner, routes, session_store, weather
+from . import config, gemini, places, planner, rides, routes, session_store, weather
 from .models import InterpretRequest, ParseRequest, ReplanRequest, TripRequest
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -586,6 +586,7 @@ async def plan_stream(req: TripRequest, persist: bool = True):
             walk, walk_m = mats[0]
             transit = mats[1][0]
             drive = mats[2][0] if len(mats) > 2 else None
+            drive_m = mats[2][1] if len(mats) > 2 else None
             yield step_ok("matrix", t0, f"{len(pts) ** 2 * len(modes):,} real travel times "
                                         f"({', '.join(m.lower() for m in modes)}).")
 
@@ -595,7 +596,7 @@ async def plan_stream(req: TripRequest, persist: bool = True):
                 utc_offset=utc_offset, sunset=sunset, hotel=hotel,
                 end_location=end_location, end_node=end_node, cands=shortlist,
                 walk=walk, walk_m=walk_m, transit=transit, drive=drive,
-                start=start_min, deadline=deadline, now=start_min, loc=0,
+                start=start_min, deadline=deadline, drive_m=drive_m, now=start_min, loc=0,
                 forecast=forecast, rain_hours=rain_hours)
             for c in shortlist:
                 del c._raw
@@ -955,6 +956,37 @@ def _stop_json(s, st, done):
             "opens": c.windows[0][0] if c.windows else None}
 
 
+def _ride_comparison(s, legs):
+    if s.mode != "ride":
+        return None
+    fare_lows, fare_highs, ride_minutes = [], [], 0
+    transit_minutes, paid_transit_legs = 0, 0
+    for a, b, leg in legs:
+        ride_minutes += leg["min"]
+        if leg.get("fare"):
+            fare_lows.append(leg["fare"]["low"])
+            fare_highs.append(leg["fare"]["high"])
+        transit = s.transit[a][b]
+        walk = s.walk[a][b]
+        if transit is not None and (walk is None or transit < walk):
+            transit_minutes += transit
+            paid_transit_legs += 1
+        elif walk is not None:
+            transit_minutes += walk
+        else:
+            transit_minutes = None
+            break
+    return {
+        "coverage": rides.waymo_coverage(s.trip["city"]),
+        "ride": {"minutes": ride_minutes, "fare_low": round(sum(fare_lows), 2),
+                 "fare_high": round(sum(fare_highs), 2)},
+        "transit": {"minutes": transit_minutes,
+                    "fare_estimate": round(paid_transit_legs * 2.50, 2)},
+        "note": ("Ride fares are broad planning ranges, not live quotes. Transit uses a $2.50 "
+                 "per-boarded-leg placeholder; local passes and transfers may cost less."),
+    }
+
+
 def _payload(s, story, cuts):
     res = planner.simulate(s, s.route, s.now, s.loc)
     if res is None:  # out of time: go straight to the end point
@@ -969,6 +1001,8 @@ def _payload(s, story, cuts):
     done = [_stop_json(s, st, True) for st in s.completed]
     upcoming = [_stop_json(s, st, False) for st in res["stops"]]
     all_stops = s.completed + res["stops"]
+    ride_legs = [(x["from"], x["node"], x["leg"]) for x in all_stops]
+    ride_legs.append((res["back"]["from"], s.end_node, res["back"]))
     in_plan = {x["node"] for x in all_stops}
     walk = sum(x["leg"]["km"] for x in all_stops if x["leg"]["mode"] == "walk") + \
         (back["km"] if back["mode"] == "walk" else 0)
@@ -991,4 +1025,5 @@ def _payload(s, story, cuts):
                    for k, c in enumerate(s.cands, 1) if k not in in_plan],
         "cuts": cuts, "dropped": s.dropped, "story": story,
         "compare": getattr(s, "compare", None),
+        "ride_compare": _ride_comparison(s, ride_legs),
     }

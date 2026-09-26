@@ -150,6 +150,10 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
 
 .compare h2{margin-bottom:.35rem}
 .compare p{margin:0 0 .8rem;color:var(--muted);font-size:.88rem}
+.ridecompare{margin-top:1rem;padding-top:1rem;border-top:1px solid var(--line)}
+.ridecompare h3{margin:0 0 .35rem;font-size:1rem}.ridecompare .cards{display:grid;grid-template-columns:1fr 1fr;gap:.55rem;margin:.65rem 0}
+.ridecompare .card{padding:.7rem;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+.ridecompare .card b,.ridecompare .card span{display:block}.ridecompare .card span{color:var(--muted);font-size:.82rem;margin-top:.2rem}
 .bars{display:grid;grid-template-columns:auto 1fr;gap:.55rem .8rem;align-items:center;font-size:.85rem}
 .bars .nm{font-weight:600}.bars .nm small{display:block;font-weight:400;color:var(--muted)}
 .bar{display:flex;height:22px;border-radius:6px;overflow:hidden;background:var(--land);border:1px solid var(--line)}
@@ -362,6 +366,7 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
         <span><i style="background:var(--muted);opacity:.55"></i>Getting around</span>
         <span><i style="background:repeating-linear-gradient(45deg,var(--gold) 0 3px,transparent 3px 6px)"></i>Waiting for opening</span>
       </div>
+      <div class="ridecompare" id="rideCompare" hidden></div>
     </section>
   </div>
 
@@ -685,7 +690,7 @@ function renderEvents(){
 }
 function legText(L){
   if(L.mode==="walk")return `Walk ${L.min} min, ${L.km.toFixed(1)} km`;
-  if(L.mode==="ride")return `Ride ${L.min} min (incl. pickup)`;
+  if(L.mode==="ride"){const f=L.fare;return `Ride ${L.min} min (incl. pickup)${f?`, est. $${f.low.toFixed(0)}–$${f.high.toFixed(0)}`:""}`;}
   return `Transit ${L.min} min`;
 }
 const NO_PUTBACK=["Closed that day","Its hours don't fit your time window"];  // forcing can't help these
@@ -743,12 +748,17 @@ function renderItin(){
   $("#cuts").innerHTML=cuts;
 }
 function renderCompare(){
-  const c=S.plan.compare,box=$("#compare");
-  if(!c||!c.plan||!c.naive){box.hidden=true;return;}
+  const c=S.plan.compare,r=S.plan.ride_compare,box=$("#compare"),ride=$("#rideCompare");
+  if((!c||!c.plan||!c.naive)&&!r){box.hidden=true;return;}
   box.hidden=false;
-  const pct=v=>Math.max(0,v/c.window*100).toFixed(2)+"%";
-  const row=(label,x)=>`<div class="nm">${label}<small>${x.stops} stops, ${hm(x.travel)} moving</small></div><div class="bar" role="img" aria-label="${label}: ${hm(x.see)} sightseeing, ${hm(x.travel)} getting around, ${hm(x.waited)} waiting"><span class="see" style="width:${pct(x.see)}"></span><span class="move" style="width:${pct(x.travel)}"></span><span class="waitb" style="width:${pct(x.waited)}"></span></div>`;
-  $("#bars").innerHTML=row("Sightline",c.plan)+row("List order",c.naive);
+  if(c&&c.plan&&c.naive){
+    const pct=v=>Math.max(0,v/c.window*100).toFixed(2)+"%";
+    const row=(label,x)=>`<div class="nm">${label}<small>${x.stops} stops, ${hm(x.travel)} moving</small></div><div class="bar" role="img" aria-label="${label}: ${hm(x.see)} sightseeing, ${hm(x.travel)} getting around, ${hm(x.waited)} waiting"><span class="see" style="width:${pct(x.see)}"></span><span class="move" style="width:${pct(x.travel)}"></span><span class="waitb" style="width:${pct(x.waited)}"></span></div>`;
+    $("#bars").innerHTML=row("Sightline",c.plan)+row("List order",c.naive);
+  }
+  ride.hidden=!r;if(!r)return;
+  const cv=r.coverage,tf=r.transit.minutes==null?"Unavailable":hm(r.transit.minutes);
+  ride.innerHTML=`<h3>Ride versus transit</h3><p><a href="${esc(cv.source)}" target="_blank" rel="noopener">${esc(cv.text)}</a>${cv.access?` (${esc(cv.access)})`:""}.</p><div class="cards"><div class="card"><b>Ride · ${hm(r.ride.minutes)}</b><span>Est. $${r.ride.fare_low.toFixed(0)}–$${r.ride.fare_high.toFixed(0)} total</span></div><div class="card"><b>Transit · ${tf}</b><span>Est. $${r.transit.fare_estimate.toFixed(0)} total</span></div></div><p>${esc(r.note)}</p>`;
 }
 function itineraryText(p){
   const lines=[

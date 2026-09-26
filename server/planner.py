@@ -16,6 +16,8 @@ from datetime import date as Date
 
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
+from . import rides
+
 PACE = {"relaxed": 1.25, "normal": 1.0, "packed": 0.8}
 WALK_CAP_KM = {"walk": (math.inf, 0.9), "transit": (1.3, 0.7), "ride": (1.0, 0.6)}  # (normal, tired)
 RIDE_PICKUP_MIN = 4
@@ -85,6 +87,7 @@ class Session:
     drive: list | None
     start: int
     deadline: int
+    drive_m: list | None = None
     now: int = 0
     loc: int = 0
     completed: list = field(default_factory=list)
@@ -332,7 +335,7 @@ def leg(s: Session, a: int, b: int) -> dict:
     if a == b:
         return {"mode": "walk", "min": 0, "km": 0.0}
     walk = s.walk[a][b]
-    km = (s.walk_m[a][b] or 0) / 1000 if s.walk_m[a][b] is not None else None
+    walk_km = (s.walk_m[a][b] or 0) / 1000 if s.walk_m[a][b] is not None else None
     if walk is not None and s.tired:
         walk = math.ceil(walk * 1.25)
     cap = WALK_CAP_KM[s.mode][1 if s.tired else 0]
@@ -342,10 +345,16 @@ def leg(s: Session, a: int, b: int) -> dict:
         vehicle, vmode = s.transit[a][b], "transit"
     else:
         vehicle, vmode = None, None
-    if walk is not None and (km is not None and km <= cap or vehicle is None or walk <= vehicle):
-        return {"mode": "walk", "min": max(1, walk), "km": round(km or 0, 2)}
+    if walk is not None and (walk_km is not None and walk_km <= cap or vehicle is None or walk <= vehicle):
+        return {"mode": "walk", "min": max(1, walk), "km": round(walk_km or 0, 2)}
     if vehicle is not None:
-        return {"mode": vmode, "min": max(1, vehicle), "km": round(km or 0, 2)}
+        km = walk_km
+        if vmode == "ride" and s.drive_m and s.drive_m[a][b] is not None:
+            km = s.drive_m[a][b] / 1000
+        out = {"mode": vmode, "min": max(1, vehicle), "km": round(km or 0, 2)}
+        if vmode == "ride":
+            out["fare"] = rides.fare_range(km, out["min"])
+        return out
     return {"mode": "walk", "min": 9999, "km": 0.0}  # unreachable
 
 
