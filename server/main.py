@@ -266,6 +266,7 @@ async def parse(req: ParseRequest):
         "pace": p.pace if p.pace in planner.PACE else "normal",
         "getting_around": p.getting_around if p.getting_around in MODE_API else "transit",
         "by_neighborhood": p.by_neighborhood,
+        "budget": p.budget if p.budget >= 0 else None,
     }
 
 
@@ -370,10 +371,12 @@ async def plan_stream(req: TripRequest):
             brief = [{"id": p["id"], "name": places.display_name(p), "types": p.get("types", [])[:4],
                       "rating": p.get("rating"), "reviews": p.get("userRatingCount", 0),
                       "summary": p.get("editorialSummary", {}).get("text", ""),
+                      "price_level": p.get("priceLevel", "").removeprefix("PRICE_LEVEL_").lower(),
                       "must_see": "must" in flags.get(p["id"], set()),
                       "appointment": "appointment" in flags.get(p["id"], set())} for p in raw]
-            judged = {j.id: j for j in await gemini.score_places(
-                {k: trip[k] for k in ("city", "loves", "skips", "must_see", "appointments", "pace")}, brief)}
+            scored = await gemini.score_places(
+                {k: trip[k] for k in ("city", "loves", "skips", "must_see", "appointments", "pace")}, brief)
+            judged = {j.id: j for j in scored.places}
             cands = []
             for p in raw:
                 j = judged.get(p["id"])
@@ -388,7 +391,7 @@ async def plan_stream(req: TripRequest):
                     kind=j.kind if j and j.kind in planner.KIND_DEFAULT_MIN else "sight",
                     setting=j.setting if j and j.setting in planner.RAIN_FACTOR else "indoor",
                     reason=j.reason if j else "", must=must,
-                    appointment_time=appointment_times.get(p["id"]))
+                    appointment_time=appointment_times.get(p["id"]), cost=max(0, j.cost) if j else 0)
                 c.visit_min = planner.KIND_DEFAULT_MIN[c.kind]
                 c._raw = p
                 if c.score > 0 or must or c.appointment_time is not None or using_list:
@@ -523,14 +526,15 @@ async def plan_stream(req: TripRequest):
                 end_location=end_location, end_node=end_node, cands=shortlist,
                 walk=walk, walk_m=walk_m, transit=transit, drive=drive,
                 start=start_min, deadline=deadline, now=start_min, loc=0,
-                forecast=forecast, rain_hours=rain_hours)
+                forecast=forecast, rain_hours=rain_hours, currency=scored.currency)
             for c in shortlist:
                 del c._raw
 
             # --- OR-Tools
             yield step_run("solve", "Choose the stops and their order",
                            "OR-Tools routing: time windows, optional stops"
-                           + (", neighborhood switch cost" if s.blocks else ""),
+                           + (", neighborhood switch cost" if s.blocks else "")
+                           + (", budget" if trip.get("budget") is not None else ""),
                            "server/planner.py: solve()")
             t0 = time.perf_counter()
             nodes = list(range(1, len(shortlist) + 1))
@@ -820,7 +824,7 @@ def _stop_json(s, st, done):
             "rating": c.rating, "count": c.count, "maps_uri": c.maps_uri,
             "hours_known": c.hours_known,
             "locked": c.must or c.appointment_time is not None or st["node"] in s.locked, "must": c.must,
-            "fixed": c.appointment_time is not None,
+            "fixed": c.appointment_time is not None, "cost": c.cost,
             "opens": c.windows[0][0] if c.windows else None}
 
 
@@ -853,7 +857,9 @@ def _payload(s, story, cuts):
         "blocks": _blocks(s, all_stops) if s.blocks else [],
         "summary": {"stops": len(all_stops), "walk_km": round(walk, 1),
                     "moving": sum(x["leg"]["min"] for x in all_stops) + back["min"],
-                    "zones": len({s.cand(x["node"]).zone_name for x in all_stops})},
+                    "zones": len({s.cand(x["node"]).zone_name for x in all_stops}),
+                    "cost": sum(s.cand(x["node"]).cost for x in all_stops)},
+        "budget": s.trip.get("budget"), "currency": s.currency,
         "others": [{"name": c.name, "lat": c.lat, "lng": c.lng}
                    for k, c in enumerate(s.cands, 1) if k not in in_plan],
         "cuts": cuts, "dropped": s.dropped, "story": story,

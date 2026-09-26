@@ -6,7 +6,8 @@ skipping one costs its score, so the solver fits the most valuable set of stops.
 Opening hours are time windows, visit lengths are service times, meals must land
 in lunch or dinner hours, viewpoints lean toward golden hour, and switching
 neighborhoods costs points so the day forms blocks. Hours with rain in the
-forecast make outdoor stops worth less, so they get pushed to dry hours.
+forecast make outdoor stops worth less, so they get pushed to dry hours. When the
+traveler sets a budget, the estimated tickets and meals must fit inside it.
 """
 import math
 from dataclasses import dataclass, field
@@ -54,6 +55,7 @@ class Cand:
     zone_name: str = ""
     must: bool = False
     appointment_time: int | None = None  # fixed local start time, minutes after midnight
+    cost: int = 0                 # estimated spend per person, local currency
 
 
 @dataclass
@@ -81,6 +83,7 @@ class Session:
     locked: set = field(default_factory=set)   # nodes the user forced into the plan
     forecast: list = field(default_factory=list)            # hourly {hour, prob, mm}; empty if unavailable
     rain_hours: set = field(default_factory=set)            # local hours when rain is expected
+    currency: str = ""                                      # ISO 4217 code for costs and the budget
     tired: bool = False
     route: list = field(default_factory=list)
     initial_route: list = field(default_factory=list)
@@ -223,6 +226,13 @@ def visit_len(s: Session, node: int) -> int:
 
 def meals_had(s: Session) -> set:
     return {n for x in s.completed for n in x["notes"] if n in MEALS}
+
+
+def budget_left(s: Session) -> int | None:
+    """What's left of the budget after the stops already done, or None when there's no limit."""
+    if s.trip.get("budget") is None:
+        return None
+    return s.trip["budget"] - sum(s.cand(x["node"]).cost for x in s.completed)
 
 
 def appointment_meal(c) -> str:
@@ -406,6 +416,12 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
         lambda i: 1 if manager.IndexToNode(i) >= 2 and s.cand(nodes[manager.IndexToNode(i)]).kind == "snack" else 0)
     routing.AddDimension(snack_idx, 0, 1, True, "snacks")             # at most one snack
 
+    left = budget_left(s)
+    if left is not None:                                                # tickets and meals fit the budget
+        cost_idx = routing.RegisterUnaryTransitCallback(
+            lambda i: s.cand(nodes[manager.IndexToNode(i)]).cost if manager.IndexToNode(i) >= 2 else 0)
+        routing.AddDimension(cost_idx, 0, max(0, left), True, "Budget")
+
     copies = {}
     for li in range(2, n):
         k, idx = nodes[li], manager.NodeToIndex(li)
@@ -456,8 +472,10 @@ def naive(s: Session, t0: int, start_node: int, cand_nodes: list) -> list:
     """Baseline: go down Google's 'top attractions' list in order, skipping what doesn't fit."""
     order = sorted((k for k in cand_nodes if s.cand(k).score >= 40),
                    key=lambda k: (s.cand(k).list_rank, -s.cand(k).score))
-    route = []
+    route, left = [], budget_left(s)
     for k in order:
+        if left is not None and sum(s.cand(x).cost for x in route + [k]) > left:
+            continue
         if simulate(s, route + [k], t0, start_node):
             route.append(k)
     return route
@@ -466,6 +484,8 @@ def naive(s: Session, t0: int, start_node: int, cand_nodes: list) -> list:
 def cut_reasons(s: Session, cand_nodes: list, route: list, t0: int) -> list:
     in_plan = set(route) | {x["node"] for x in s.completed}
     zones = {s.cand(k).zone for k in in_plan}
+    left = budget_left(s)
+    spend = sum(s.cand(k).cost for k in route)
     out = []
     for k in cand_nodes:
         if k in in_plan:
@@ -477,6 +497,8 @@ def cut_reasons(s: Session, cand_nodes: list, route: list, t0: int) -> list:
             why = "Closed that day"
         elif not allowed_starts(s, k, t0):
             why = "Its hours don't fit your time window"
+        elif left is not None and c.cost > left - spend:
+            why = "Would go over your budget"
         elif c.kind == "snack" and any(s.cand(x).kind == "snack" for x in in_plan):
             why = "One snack stop is enough for the day"
         elif c.setting == "outdoor" and not allowed_starts(s, k, t0, weather="dry"):

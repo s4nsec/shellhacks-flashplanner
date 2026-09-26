@@ -20,7 +20,7 @@ def parsed(**kw) -> gemini.ParsedTrip:
     fields = dict(city="Tokyo", date="", relative_day="", start_time="", end_time="",
                   start_location="", end_location="", loves=[], skips=[], must_see=[],
                   appointments=[], pace="normal", getting_around="transit",
-                  by_neighborhood=True)
+                  by_neighborhood=True, budget=-1)
     fields.update(kw)
     return gemini.ParsedTrip(**fields)
 

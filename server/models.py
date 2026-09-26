@@ -23,6 +23,7 @@ class TripRequest(BaseModel):
     getting_around: Literal["walk", "transit", "ride"] = "transit"
     by_neighborhood: bool = True
     user_list: list[str] = Field(default_factory=list)  # place names pasted from a blog or list
+    budget: Optional[int] = Field(default=None, ge=0)   # per person for the day, local currency; None = no limit
 
 
 class ParseRequest(BaseModel):
