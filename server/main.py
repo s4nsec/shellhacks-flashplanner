@@ -9,6 +9,7 @@ stage runs (for the agent trace), then one "plan" event, or an "error" event.
 """
 import asyncio
 import json
+import logging
 import time
 import uuid
 from datetime import date as Date, datetime, timedelta, timezone
@@ -20,6 +21,9 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from . import config, gemini, places, planner, routes
 from .models import InterpretRequest, ParseRequest, ReplanRequest, TripRequest
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("sightline")
 
 app = FastAPI(title="Sightline")
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -352,6 +356,11 @@ async def plan_stream(req: TripRequest):
             required = sum(c.must or c.appointment_time is not None for c in cands)
             shortlist = cands[:max(SHORTLIST, required)]
             top = ", ".join(f"{c.name} {c.score}" for c in shortlist[:3])
+            log.info("Trip %s: loves=%s skips=%s must_see=%s", city, trip["loves"], trip["skips"], trip["must_see"])
+            short_ids = {c.id for c in shortlist}
+            log.info("Scored places (* = shortlisted for the solver):\n%s", "\n".join(
+                f"  {'*' if c.id in short_ids else ' '} {c.score:3d} {c.kind:<9} {c.name} | must={c.must} | {c.reason}"
+                for c in cands))
             yield step_ok("score", t0, f"Kept the best {len(shortlist)} for you. Top matches: {top}.")
 
             # --- reviews -> visit lengths
@@ -457,7 +466,7 @@ async def plan_stream(req: TripRequest):
             t0 = time.perf_counter()
             nodes = list(range(1, len(shortlist) + 1))
             s.route = await asyncio.to_thread(planner.solve, s, s.now, 0, nodes)
-            s.initial_route = list(s.route)
+            s.initial_route, s.initial_meal_slot = list(s.route), dict(s.meal_slot)
             base = planner.naive(s, s.now, 0, nodes)
             res = planner.simulate(s, s.route, s.now, 0)
             nres = planner.simulate(s, base, s.now, 0)
@@ -520,9 +529,28 @@ async def replan_stream(req: ReplanRequest):
                 s.completed, s.skipped, s.now, s.loc = [], set(), s.start, 0
                 s.raining = s.tired = False
                 s.route, s.changed, s.dropped = list(s.initial_route), set(), []
+                s.locked = set()
+                s.meal_slot = dict(s.initial_meal_slot)
                 all_nodes = list(range(1, len(s.cands) + 1))
                 cuts = planner.cut_reasons(s, all_nodes, s.route, s.now)
                 yield ev(type="plan", **_payload(s, "Back to the start of the day. " + await _story(s, cuts), cuts))
+                return
+            node = next((k for k, c in enumerate(s.cands, 1) if c.id == req.place_id), None)
+            if req.event in ("include", "lock", "unlock") and node is None:
+                yield ev(type="error", message="That place isn't part of this plan.")
+                return
+            if req.event in ("lock", "unlock"):
+                name = s.cand(node).name
+                if req.event == "lock":
+                    s.locked.add(node)
+                    story = f"Locked {name}. It will stay in the plan through later changes."
+                else:
+                    s.locked.discard(node)
+                    story = f"Unlocked {name}. A later re-plan may drop it if something else fits better."
+                s.changed, s.dropped = set(), []
+                yield ev(type="step", key=req.event, status="ok", title="Nothing to re-plan",
+                         result=story, fresh=True)
+                yield ev(type="plan", **_payload(s, story, planner.cut_reasons(s, nodes, s.route, s.now)))
                 return
             if req.event == "done":
                 res = planner.simulate(s, s.route, s.now, s.loc)
@@ -559,6 +587,11 @@ async def replan_stream(req: ReplanRequest):
             elif req.event == "skip" and prev_next:
                 s.skipped.add(prev_next)
                 nodes = [k for k in nodes if k != prev_next]
+            elif req.event == "include":
+                s.locked.add(node)
+                s.skipped.discard(node)
+                if node not in nodes:
+                    nodes.append(node)
             else:
                 yield ev(type="error", message=f"Unknown event: {req.event}")
                 return
@@ -569,6 +602,10 @@ async def replan_stream(req: ReplanRequest):
             t0 = time.perf_counter()
             s.route = await asyncio.to_thread(planner.solve, s, s.now, s.loc, nodes)
             s.changed = set(s.route) - set(prev)
+            could_not_fit = None
+            if req.event == "include" and node not in s.route:
+                s.locked.discard(node)  # forcing couldn't make it fit, so don't leave it locked
+                could_not_fit = s.cand(node).name
             s.dropped = [s.cand(k).name for k in prev
                          if k not in s.route and not (req.event == "skip" and k == prev_next)]
             yield step_ok("resolve", t0, f"{len(s.route)} stops still fit. Travel times came from the cached matrix.",
@@ -585,6 +622,8 @@ async def replan_stream(req: ReplanRequest):
             facts = {"event": req.event, "time_now": fmt(s.now),
                      "dropped": s.dropped, "added": [s.cand(k).name for k in s.changed],
                      "skipped": s.cand(prev_next).name if req.event == "skip" and prev_next else None,
+                     "put_back": s.cand(node).name if req.event == "include" and not could_not_fit else None,
+                     "could_not_fit": could_not_fit,
                      "next": (s.cand(res["stops"][0]["node"]).name + " at " + fmt(res["stops"][0]["arrive"]))
                      if res and res["stops"] else None,
                      "finish_by": fmt(res["end"]) if res else None,
@@ -658,6 +697,10 @@ async def _story(s, cuts):
 
 def _fallback_change(f):
     out = []
+    if f.get("could_not_fit"):
+        out.append(f"Couldn't fit {f['could_not_fit']} back in, even after moving things around.")
+    if f.get("put_back"):
+        out.append(f"Put {f['put_back']} back in the plan.")
     if f["dropped"]:
         out.append(f"Dropped {', '.join(f['dropped'])}.")
     if f["added"]:
@@ -667,6 +710,18 @@ def _fallback_change(f):
     if f["finish_by"]:
         out.append(f"Finish at {f['finish_at']} by {f['finish_by']}.")
     return " ".join(out) or "The plan still works as is."
+
+
+def _log_itinerary(s, res):
+    lines = [f"Itinerary {s.id} ({s.trip['city']} {s.date}, now {fmt(s.now)}, deadline {fmt(s.deadline)}):"]
+    for label, stops in (("done", s.completed), ("next", res["stops"])):
+        for st in stops:
+            c = s.cand(st["node"])
+            lines.append(f"  [{label}] {fmt(st['begin'])}-{fmt(st['leave'])} {c.name} | kind={c.kind} score={c.score} "
+                         f"must={c.must} zone={c.zone_name} notes={st['notes']} "
+                         f"leg={st['leg']['mode']} {st['leg']['min']}min | {c.reason}")
+    lines.append(f"  at {s.end_location['name']} by {fmt(res['end'])}")
+    log.info("\n".join(lines))
 
 
 def _stop_json(s, st, done):
@@ -681,6 +736,7 @@ def _stop_json(s, st, done):
             "zone": c.zone_name, "kind": c.kind, "setting": c.setting, "reason": c.reason,
             "rating": c.rating, "count": c.count, "maps_uri": c.maps_uri,
             "hours_known": c.hours_known,
+            "locked": c.must or st["node"] in s.locked, "must": c.must,
             "opens": c.windows[0][0] if c.windows else None}
 
 
@@ -691,6 +747,7 @@ def _payload(s, story, cuts):
         res = {"stops": [], "back": {**back, "from": s.loc}, "end": s.now + back["min"],
                "travel": back["min"], "walk_km": back["km"] if back["mode"] == "walk" else 0}
         s.route = []
+    _log_itinerary(s, res)
     back = dict(res["back"])
     back["polyline"] = s.polylines.get((back["from"], s.end_node, back["mode"]))
     back.pop("from", None)

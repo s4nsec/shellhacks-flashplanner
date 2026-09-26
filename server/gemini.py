@@ -127,7 +127,7 @@ Candidate places from Google Maps (id, name, types, rating, review count, summar
 For EVERY candidate return:
 - id: copied exactly.
 - score: 0-100, how worthwhile this place is for THIS traveler on a short visit.
-  Reward matches with "loves", penalize "skips" heavily, and give "must_see" and
+  Reward matches with "loves", give places that match "skips" under 20, and give "must_see" and
   appointment places 95+.
   Give 0 to things that aren't worth a tourist's time (hotels, generic shops, offices,
   transit stations, duplicates of another candidate).

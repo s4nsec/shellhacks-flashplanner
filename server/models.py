@@ -36,5 +36,6 @@ class InterpretRequest(BaseModel):
 
 class ReplanRequest(BaseModel):
     session_id: str
-    event: Literal["done", "rain", "late", "tired", "skip", "reset"]
+    event: Literal["done", "rain", "late", "tired", "skip", "reset", "include", "lock", "unlock"]
     delay_minutes: int = 30
+    place_id: Optional[str] = None        # for include | lock | unlock
