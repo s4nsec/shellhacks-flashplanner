@@ -28,6 +28,9 @@ log = logging.getLogger("sightline")
 app = FastAPI(title="Sightline")
 WEB = Path(__file__).resolve().parent.parent / "web"
 SESSIONS: dict[str, planner.Session] = {}   # in memory, one per planned day
+SESSION_TOUCHED: dict[str, float] = {}
+SESSION_TTL_SECONDS = 6 * 60 * 60
+MAX_SESSIONS = 50
 SHORTLIST = 20        # places that get reviews, travel times and a place in the solver
 MAX_CANDIDATES = 40   # places Gemini scores
 MODE_API = {"walk": "WALK", "transit": "TRANSIT", "ride": "DRIVE"}
@@ -83,6 +86,36 @@ def missing_keys_message() -> str | None:
     return None
 
 
+def evict_old_sessions(now: float | None = None) -> None:
+    if now is None:
+        now = time.time()
+    cutoff = now - SESSION_TTL_SECONDS
+    expired = [sid for sid, touched in SESSION_TOUCHED.items() if touched < cutoff]
+    for sid in expired:
+        SESSION_TOUCHED.pop(sid, None)
+        SESSIONS.pop(sid, None)
+    if len(SESSIONS) <= MAX_SESSIONS:
+        return
+    oldest = sorted(SESSION_TOUCHED, key=SESSION_TOUCHED.get)
+    for sid in oldest[:len(SESSIONS) - MAX_SESSIONS]:
+        SESSION_TOUCHED.pop(sid, None)
+        SESSIONS.pop(sid, None)
+
+
+def remember_session(s: planner.Session) -> None:
+    SESSION_TOUCHED[s.id] = time.time()
+    SESSIONS[s.id] = s
+    evict_old_sessions()
+
+
+def get_session(session_id: str) -> planner.Session | None:
+    evict_old_sessions()
+    s = SESSIONS.get(session_id)
+    if s:
+        SESSION_TOUCHED[session_id] = time.time()
+    return s
+
+
 # ---------- pages & config ----------
 
 @app.get("/")
@@ -94,6 +127,80 @@ def index():
 def get_config():
     return {"mapsKey": config.MAPS_BROWSER_KEY, "mapId": config.MAP_ID,
             "missing": config.missing_keys(), "model": config.GEMINI_MODEL}
+
+
+@app.get("/api/demo")
+def demo_plan():
+    """Static Montreal plan for judging tables when API keys or quotas are unavailable."""
+    hotel = {"name": "Sheraton Montreal downtown", "lat": 45.5009, "lng": -73.5738}
+    stops = [
+        _demo_stop("Notre-Dame Basilica", 45.5045, -73.5561, 615, 625, 685, "Vieux-Montreal",
+                   "sight", "indoor", "Iconic architecture and a compact first stop.", 4.7, 38215,
+                   {"mode": "transit", "min": 10, "km": 1.5}, "reviews"),
+        _demo_stop("Old Port of Montreal", 45.5076, -73.5517, 693, 693, 743, "Vieux-Montreal",
+                   "park", "outdoor", "Waterfront views without committing the whole day.", 4.6, 30144,
+                   {"mode": "walk", "min": 8, "km": 0.6}, "gemini"),
+        _demo_stop("Jean-Talon Market", 45.5352, -73.6141, 770, 770, 840, "Little Italy",
+                   "meal", "covered", "Lunch fits the food brief and keeps the route lively.", 4.6, 28102,
+                   {"mode": "transit", "min": 27, "km": 5.8}, "reviews", ["lunch"]),
+        _demo_stop("Mount Royal Lookout", 45.5039, -73.5878, 915, 915, 960, "Mount Royal",
+                   "viewpoint", "outdoor", "Best city view near golden hour.", 4.8, 19762,
+                   {"mode": "transit", "min": 35, "km": 6.2}, "default", ["golden"]),
+        _demo_stop("Bar George", 45.5016, -73.5766, 982, 1050, 1110, "Downtown",
+                   "meal", "indoor", "Dinner lands close to the hotel in a historic room.", 4.4, 3951,
+                   {"mode": "walk", "min": 22, "km": 1.4}, "gemini", ["dinner"]),
+    ]
+    back = {"mode": "walk", "min": 7, "km": 0.5, "polyline": None}
+    return {
+        "session_id": "demo", "demo": True, "city": "Montreal", "date": Date.today().isoformat(),
+        "start": 600, "deadline": 1140, "now": 600, "sunset": 1115,
+        "raining": False, "tired": False,
+        "trip": {"city": "Montreal", "date": None, "start_time": "10:00", "end_time": "19:00",
+                 "start_location": "Sheraton downtown", "loves": ["architecture", "food", "views"],
+                 "skips": ["museums"], "must_see": [], "pace": "normal",
+                 "getting_around": "transit", "by_neighborhood": True, "user_list": []},
+        "hotel": hotel, "end_location": hotel, "at": hotel["name"], "shifted": False,
+        "completed": [], "stops": stops, "back": back, "end": 1117,
+        "blocks": [
+            {"zone": "Vieux-Montreal", "from": 625, "to": 743, "count": 2},
+            {"zone": "Little Italy", "from": 770, "to": 840, "count": 1},
+            {"zone": "Mount Royal", "from": 915, "to": 960, "count": 1},
+            {"zone": "Downtown", "from": 1050, "to": 1110, "count": 1},
+        ],
+        "summary": {"stops": 5, "walk_km": 2.5, "moving": 109, "zones": 4},
+        "others": [
+            {"name": "Montreal Museum of Fine Arts", "lat": 45.4986, "lng": -73.5795},
+            {"name": "La Fontaine Park", "lat": 45.5278, "lng": -73.5690},
+            {"name": "Atwater Market", "lat": 45.4793, "lng": -73.5779},
+        ],
+        "cuts": [
+            {"name": "Montreal Museum of Fine Arts", "why": "Museums were on the skip list", "score": 20},
+            {"name": "La Fontaine Park", "why": "Would add a separate trip east", "score": 48},
+            {"name": "Atwater Market", "why": "Jean-Talon was a stronger food stop", "score": 56},
+        ],
+        "dropped": [],
+        "story": ("Demo plan: five stops fit between 10:00 am and 7:00 pm, grouped into neighborhood blocks "
+                  "so the day is easy to explain to judges. Lunch lands at Jean-Talon Market, the lookout is "
+                  "timed near sunset, and you're back downtown with time to spare."),
+        "compare": {
+            "window": 540,
+            "plan": {"stops": 5, "see": 295, "travel": 109, "waited": 68},
+            "naive": {"stops": 4, "see": 230, "travel": 156, "waited": 35},
+        },
+    }
+
+
+def _demo_stop(name, lat, lng, arrive, begin, leave, zone, kind, setting, reason,
+               rating, count, leg, source, notes=None):
+    return {
+        "id": "demo-" + name.lower().replace(" ", "-"),
+        "name": name, "lat": lat, "lng": lng,
+        "arrive": arrive, "begin": begin, "wait": begin - arrive, "leave": leave,
+        "leg": {**leg, "polyline": None}, "notes": notes or [], "done": False, "new": False,
+        "visit": {"minutes": leave - begin, "base": leave - begin, "source": source, "evidence": []},
+        "zone": zone, "kind": kind, "setting": setting, "reason": reason,
+        "rating": rating, "count": count, "maps_uri": "", "hours_known": True, "opens": None,
+    }
 
 
 # ---------- 1. understand the message ----------
@@ -112,7 +219,9 @@ async def parse(req: ParseRequest):
         "start_time": p.start_time or None,
         "end_time": p.end_time or None,
         "start_location": p.start_location or None,
+        "end_location": p.end_location or None,
         "loves": p.loves, "skips": p.skips, "must_see": p.must_see,
+        "appointments": [a.model_dump() for a in p.appointments],
         "pace": p.pace if p.pace in planner.PACE else "normal",
         "getting_around": p.getting_around if p.getting_around in MODE_API else "transit",
         "by_neighborhood": p.by_neighborhood,
@@ -154,15 +263,31 @@ async def plan_stream(req: TripRequest):
             utc_offset = sp.get("utcOffsetMinutes", 0)
             bias = (hotel["lat"], hotel["lng"])
 
+            end_location = hotel
+            if trip.get("end_location"):
+                end_q = f"{trip['end_location']}, {city}"
+                end_hits = await places.search_text(http, end_q, 1, bias)
+                if not end_hits:
+                    yield ev(type="error", message=(
+                        f"Google Maps couldn't find “{end_q}”. "
+                        "Try a station, airport, hotel, or street address."))
+                    return
+                ep = end_hits[0]
+                end_location = {"name": places.display_name(ep), "lat": ep["location"]["latitude"],
+                                "lng": ep["location"]["longitude"]}
+
             using_list = bool(trip["user_list"])
             queries = [] if using_list else (
                 [f"top tourist attractions in {city}"] + [f"best {x} in {city}" for x in trip["loves"][:3]])
-            named = [(n, "must") for n in trip["must_see"]] + [(n, "list") for n in trip["user_list"]]
+            named = ([(n, "must", None) for n in trip["must_see"]]
+                     + [(n, "list", None) for n in trip["user_list"]]
+                     + [(a["place"], "appointment", a["time"]) for a in trip["appointments"]])
             results = await asyncio.gather(
                 *(places.search_text(http, q, 20, bias) for q in queries),
-                *(places.search_text(http, f"{n}, {city}", 1, bias) for n, _ in named))
+                *(places.search_text(http, f"{n}, {city}", 1, bias) for n, _, _ in named))
             found: dict[str, dict] = {}
             flags: dict[str, set] = {}
+            appointment_times: dict[str, int] = {}
             rank: dict[str, int] = {}
             for qi, res in enumerate(results[:len(queries)]):
                 for i, p in enumerate(res):
@@ -171,10 +296,15 @@ async def plan_stream(req: TripRequest):
                     if places.is_visitable(p):
                         found.setdefault(p["id"], p)
             missing_names = []
-            for (name, kind), res in zip(named, results[len(queries):]):
+            for (name, kind, appointment_time), res in zip(named, results[len(queries):]):
                 if res:
-                    found.setdefault(res[0]["id"], res[0])
-                    flags.setdefault(res[0]["id"], set()).add(kind)
+                    pid = res[0]["id"]
+                    found.setdefault(pid, res[0])
+                    flags.setdefault(pid, set()).add(kind)
+                    if appointment_time is not None:
+                        minute = to_min(appointment_time, -1)
+                        if minute >= 0:
+                            appointment_times[pid] = minute
                 else:
                     missing_names.append(name)
             ids = list(found)[:MAX_CANDIDATES]
@@ -199,9 +329,10 @@ async def plan_stream(req: TripRequest):
             brief = [{"id": p["id"], "name": places.display_name(p), "types": p.get("types", [])[:4],
                       "rating": p.get("rating"), "reviews": p.get("userRatingCount", 0),
                       "summary": p.get("editorialSummary", {}).get("text", ""),
-                      "must_see": "must" in flags.get(p["id"], set())} for p in raw]
+                      "must_see": "must" in flags.get(p["id"], set()),
+                      "appointment": "appointment" in flags.get(p["id"], set())} for p in raw]
             judged = {j.id: j for j in await gemini.score_places(
-                {k: trip[k] for k in ("city", "loves", "skips", "must_see", "pace")}, brief)}
+                {k: trip[k] for k in ("city", "loves", "skips", "must_see", "appointments", "pace")}, brief)}
             cands = []
             for p in raw:
                 j = judged.get(p["id"])
@@ -215,13 +346,15 @@ async def plan_stream(req: TripRequest):
                     score=max(0, min(100, j.score)) if j else 30,
                     kind=j.kind if j and j.kind in planner.KIND_DEFAULT_MIN else "sight",
                     setting=j.setting if j and j.setting in planner.RAIN_FACTOR else "indoor",
-                    reason=j.reason if j else "", must=must)
+                    reason=j.reason if j else "", must=must,
+                    appointment_time=appointment_times.get(p["id"]))
                 c.visit_min = planner.KIND_DEFAULT_MIN[c.kind]
                 c._raw = p
-                if c.score > 0 or must or using_list:
+                if c.score > 0 or must or c.appointment_time is not None or using_list:
                     cands.append(c)
-            cands.sort(key=lambda c: (not c.must, -c.score))
-            shortlist = cands[:max(SHORTLIST, sum(c.must for c in cands))]
+            cands.sort(key=lambda c: (not (c.must or c.appointment_time is not None), -c.score))
+            required = sum(c.must or c.appointment_time is not None for c in cands)
+            shortlist = cands[:max(SHORTLIST, required)]
             top = ", ".join(f"{c.name} {c.score}" for c in shortlist[:3])
             log.info("Trip %s: loves=%s skips=%s must_see=%s", city, trip["loves"], trip["skips"], trip["must_see"])
             short_ids = {c.id for c in shortlist}
@@ -294,6 +427,10 @@ async def plan_stream(req: TripRequest):
             if deadline <= start_min:
                 deadline = min(1439, start_min + 60)
             pts = [(hotel["lat"], hotel["lng"])] + [(c.lat, c.lng) for c in shortlist]
+            end_node = 0
+            if trip.get("end_location"):
+                end_node = len(pts)
+                pts.append((end_location["lat"], end_location["lng"]))
             modes = ["WALK", "TRANSIT"] + (["DRIVE"] if trip["getting_around"] == "ride" else [])
             yield step_run("matrix", "Get travel times between every pair",
                            f"routes.computeRouteMatrix({len(pts)} x {len(pts)}, {', '.join(modes)})",
@@ -314,7 +451,8 @@ async def plan_stream(req: TripRequest):
 
             s = planner.Session(
                 id=uuid.uuid4().hex[:12], trip=trip, date=day.isoformat(), weekday=weekday,
-                utc_offset=utc_offset, sunset=sunset, hotel=hotel, cands=shortlist,
+                utc_offset=utc_offset, sunset=sunset, hotel=hotel,
+                end_location=end_location, end_node=end_node, cands=shortlist,
                 walk=walk, walk_m=walk_m, transit=transit, drive=drive,
                 start=start_min, deadline=deadline, now=start_min, loc=0)
             for c in shortlist:
@@ -339,7 +477,7 @@ async def plan_stream(req: TripRequest):
                 nb = len(_blocks(s, res["stops"]))
                 blocks_txt = f" Grouped into {nb} neighborhood block{'s' if nb > 1 else ''}."
             yield step_ok("solve", t0, f"Picked {len(s.route)} of {len(nodes)} places.{blocks_txt}")
-            SESSIONS[s.id] = s
+            remember_session(s)
 
             yield step_run("shapes", "Draw the real routes", "routes.computeRoutes(each leg)",
                            "server/routes.py: polyline()")
@@ -362,7 +500,7 @@ async def plan_stream(req: TripRequest):
 
 @app.post("/api/interpret")
 async def interpret(req: InterpretRequest):
-    s = SESSIONS.get(req.session_id)
+    s = get_session(req.session_id)
     if not s:
         raise HTTPException(404, "That plan has expired. Plan the day again.")
     nxt = s.cand(s.route[0]).name if s.route else None
@@ -379,7 +517,7 @@ async def replan(req: ReplanRequest):
 
 
 async def replan_stream(req: ReplanRequest):
-    s = SESSIONS.get(req.session_id)
+    s = get_session(req.session_id)
     if not s:
         yield ev(type="error", message="That plan has expired. Plan the day again.")
         return
@@ -431,7 +569,8 @@ async def replan_stream(req: ReplanRequest):
                              f"arriving around {fmt(first['arrive'])}.")
                 else:
                     s.route = []
-                    story = f"Done with {s.cand(st['node']).name}. That was the last stop, so head back."
+                    story = (f"Done with {s.cand(st['node']).name}. That was the last stop, "
+                             f"so head to {s.end_location['name']}.")
                 yield ev(type="step", key="done", status="ok", title="Nothing to re-plan",
                          result=f"You finished on schedule. The clock moved to {fmt(s.now)}.", fresh=True)
                 yield ev(type="plan", **_payload(s, story, planner.cut_reasons(s, nodes, s.route, s.now)))
@@ -487,7 +626,8 @@ async def replan_stream(req: ReplanRequest):
                      "could_not_fit": could_not_fit,
                      "next": (s.cand(res["stops"][0]["node"]).name + " at " + fmt(res["stops"][0]["arrive"]))
                      if res and res["stops"] else None,
-                     "back_at_hotel": fmt(res["end"]) if res else None}
+                     "finish_by": fmt(res["end"]) if res else None,
+                     "finish_at": s.end_location["name"]}
             try:
                 story = await gemini.narrate_change(facts)
             except Exception:  # noqa: BLE001
@@ -522,7 +662,7 @@ async def _fetch_polylines(http, s):
     if not res:
         return
     legs = [(st["from"], st["node"], st["leg"]["mode"]) for st in res["stops"]]
-    legs.append((res["back"]["from"], 0, res["back"]["mode"]))
+    legs.append((res["back"]["from"], s.end_node, res["back"]["mode"]))
     todo = [k for k in legs if k not in s.polylines and k[0] != k[1]]
     got = await asyncio.gather(*(routes.polyline(http, s.point(a), s.point(b), MODE_API[m]) for a, b, m in todo),
                                return_exceptions=True)
@@ -534,7 +674,8 @@ async def _fetch_polylines(http, s):
 async def _story(s, cuts):
     res = planner.simulate(s, s.route, s.now, s.loc)
     if not res or not res["stops"]:
-        return (f"There isn't time for a stop and still being back by {fmt(s.deadline)}. "
+        return (f"There isn't time for a stop and still reaching {s.end_location['name']} "
+                f"by {fmt(s.deadline)}. "
                 "Try a later end time or a closer starting point.")
     facts = {
         "window": f"{fmt(s.start)} to {fmt(s.deadline)}",
@@ -542,7 +683,8 @@ async def _story(s, cuts):
                    "neighborhood": s.cand(x["node"]).zone_name, "notes": x["notes"]} for x in res["stops"]],
         "neighborhood_blocks": [b["zone"] for b in _blocks(s, res["stops"])] if s.blocks else [],
         "walking_km": res["walk_km"], "sunset": fmt(s.sunset) if s.sunset else None,
-        "left_out": cuts[:2], "back_at_hotel": fmt(res["end"]),
+        "left_out": cuts[:2],
+        "finish": {"name": s.end_location["name"], "at": fmt(res["end"])},
         "traveler": {k: s.trip.get(k) for k in ("loves", "skips", "pace")},
     }
     try:
@@ -550,7 +692,7 @@ async def _story(s, cuts):
     except Exception:  # noqa: BLE001
         first = facts["stops"][0]
         return (f"{len(facts['stops'])} stops between {facts['window']}, starting at {first['name']} "
-                f"at {first['at']}. You're back by {facts['back_at_hotel']}.")
+                f"at {first['at']}. You'll finish at {facts['finish']['name']} by {facts['finish']['at']}.")
 
 
 def _fallback_change(f):
@@ -565,8 +707,8 @@ def _fallback_change(f):
         out.append(f"Added {', '.join(f['added'])}.")
     if f["next"]:
         out.append(f"Next up: {f['next']}.")
-    if f["back_at_hotel"]:
-        out.append(f"Back by {f['back_at_hotel']}.")
+    if f["finish_by"]:
+        out.append(f"Finish at {f['finish_at']} by {f['finish_by']}.")
     return " ".join(out) or "The plan still works as is."
 
 
@@ -578,7 +720,7 @@ def _log_itinerary(s, res):
             lines.append(f"  [{label}] {fmt(st['begin'])}-{fmt(st['leave'])} {c.name} | kind={c.kind} score={c.score} "
                          f"must={c.must} zone={c.zone_name} notes={st['notes']} "
                          f"leg={st['leg']['mode']} {st['leg']['min']}min | {c.reason}")
-    lines.append(f"  back at hotel {fmt(res['end'])}")
+    lines.append(f"  at {s.end_location['name']} by {fmt(res['end'])}")
     log.info("\n".join(lines))
 
 
@@ -600,14 +742,14 @@ def _stop_json(s, st, done):
 
 def _payload(s, story, cuts):
     res = planner.simulate(s, s.route, s.now, s.loc)
-    if res is None:  # out of time: just head back
-        back = planner.leg(s, s.loc, 0)
+    if res is None:  # out of time: go straight to the end point
+        back = planner.leg(s, s.loc, s.end_node)
         res = {"stops": [], "back": {**back, "from": s.loc}, "end": s.now + back["min"],
                "travel": back["min"], "walk_km": back["km"] if back["mode"] == "walk" else 0}
         s.route = []
     _log_itinerary(s, res)
     back = dict(res["back"])
-    back["polyline"] = s.polylines.get((back["from"], 0, back["mode"]))
+    back["polyline"] = s.polylines.get((back["from"], s.end_node, back["mode"]))
     back.pop("from", None)
     done = [_stop_json(s, st, True) for st in s.completed]
     upcoming = [_stop_json(s, st, False) for st in res["stops"]]
@@ -619,7 +761,8 @@ def _payload(s, story, cuts):
         "session_id": s.id, "city": s.trip["city"], "date": s.date,
         "start": s.start, "deadline": s.deadline, "now": s.now, "sunset": s.sunset,
         "raining": s.raining, "tired": s.tired, "trip": s.trip,
-        "hotel": s.hotel, "at": s.hotel["name"] if s.loc == 0 else s.cand(s.loc).name,
+        "hotel": s.hotel, "end_location": s.end_location,
+        "at": s.hotel["name"] if s.loc == 0 else s.cand(s.loc).name,
         "shifted": bool(s.completed and s.now != s.completed[-1]["leave"]) or (not s.completed and s.now != s.start),
         "completed": done, "stops": upcoming, "back": back, "end": res["end"],
         "blocks": _blocks(s, all_stops) if s.blocks else [],
