@@ -25,8 +25,11 @@ def parsed(**kw) -> gemini.ParsedTrip:
     return gemini.ParsedTrip(**fields)
 
 
-def run_parse(p: gemini.ParsedTrip, utc_offset: int = 540) -> dict:
+def run_parse(p: gemini.ParsedTrip, utc_offset: int = 540, form_city: str = "",
+              queries: list | None = None) -> dict:
     async def fake_search(http, query, page_size=20, bias=None):
+        if queries is not None:
+            queries.append(query)
         return [{"utcOffsetMinutes": utc_offset}]
 
     with mock.patch.object(main, "datetime", FrozenDatetime), \
@@ -34,7 +37,7 @@ def run_parse(p: gemini.ParsedTrip, utc_offset: int = 540) -> dict:
          mock.patch.object(main.config, "MAPS_KEY", "test"), \
          mock.patch.object(main.gemini, "parse_trip", mock.AsyncMock(return_value=p)), \
          mock.patch.object(main.places, "search_text", fake_search):
-        return asyncio.run(main.parse(ParseRequest(message="Tokyo tomorrow")))
+        return asyncio.run(main.parse(ParseRequest(message="Tokyo tomorrow", city=form_city)))
 
 
 class ParseDateTests(unittest.TestCase):
@@ -50,6 +53,11 @@ class ParseDateTests(unittest.TestCase):
         # 20:00 UTC is 13:00 on Sep 26 in Los Angeles (UTC-7).
         result = run_parse(parsed(city="Los Angeles", relative_day="today"), utc_offset=-420)
         self.assertEqual(result["date"], "2026-09-26")
+
+    def test_form_city_wins_over_city_in_notes(self):
+        queries = []
+        run_parse(parsed(city="New York", relative_day="today"), form_city="Tokyo", queries=queries)
+        self.assertEqual(queries, ["Tokyo"])
 
     def test_explicit_date_is_kept(self):
         self.assertEqual(run_parse(parsed(date="2026-10-03"))["date"], "2026-10-03")
