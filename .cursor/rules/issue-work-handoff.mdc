@@ -1,0 +1,16 @@
+---
+description: Report picked-up issues, completed work, and review guidance
+alwaysApply: true
+---
+
+# Issue Work Handoff
+
+When picking up repository issues, always include these sections in the final handoff:
+
+1. **Issues picked up**: List each issue number and title, and note whether it was assigned.
+2. **What changed**: Summarize the implementation for each issue and mention the main files or behavior affected.
+3. **What to look for**: Give the user a short, concrete review checklist covering expected behavior, important UI or API details, and any known limitations.
+4. **Verification**: State which tests or checks ran and whether they passed. Clearly identify anything that was not tested.
+5. **Git state**: Report the branch and commit, plus whether changes were pushed or kept local.
+
+Keep the handoff concise and use issue numbers to connect each change back to its source request.

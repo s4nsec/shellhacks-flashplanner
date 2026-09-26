@@ -43,6 +43,11 @@ def session() -> planner.Session:
 
 
 class EndLocationTests(unittest.TestCase):
+    def test_demo_defaults_end_location_to_start(self):
+        payload = main.demo_plan()
+
+        self.assertEqual(payload["end_location"], payload["hotel"])
+
     def test_simulate_finishes_at_distinct_end_node(self):
         s = session()
 
