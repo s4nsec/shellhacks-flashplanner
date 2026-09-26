@@ -89,7 +89,12 @@ Constants at the top of `server/planner.py`:
 - `SWITCH_POINTS`: how strongly the day sticks to one neighborhood at a time.
 - `TRAVEL_POINTS_PER_MIN`: how much travel time counts against a plan.
 - `WALK_CAP_KM`: longest leg that's always walked, per mode.
-- `LUNCH`, `DINNER`: when sit-down meals may start.
+- `MEAL_FLEX_MIN`: how far either side of each requested meal time a sit-down
+  meal may start. Meals come from the trip's `meals` list, which defaults to
+  lunch at 12:30 and dinner at 19:00; add breakfast, change the times, or send
+  `[]` for no sit-down meals.
+- `BREAK_AFTER_MIN`: how long into the day (by pace) a café becomes a coffee
+  break. Only days long enough get one, and `auto_breaks: false` turns it off.
 - `PACE`: how pace scales visit lengths.
 
 In `server/main.py`, `SHORTLIST` (default 20) sets how many places get reviews,
@@ -97,7 +102,7 @@ travel times and a spot in the solver. More places means more API calls.
 
 ## Cost and limits per planned day
 
-Roughly 5 Text Search calls, up to 20 Place Details calls for reviews, 2 or 3
+Roughly 5 Text Search calls (6 when the day is long enough for a coffee break), up to 20 Place Details calls for reviews, 2 or 3
 route matrices of about 440 pairs each, about a dozen Compute Routes calls, and
 5 Gemini calls. Reviews and ratings are billed at higher tiers than basic place
 fields, so check the Maps Platform pricing page and set a budget alert.

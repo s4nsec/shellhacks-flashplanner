@@ -402,6 +402,8 @@ function applyParsed(p){
   if(p.pace)$("#pace").value=p.pace;
   if(p.getting_around)S.mode=p.getting_around;
   if(typeof p.by_neighborhood==="boolean")S.blocks=p.by_neighborhood;
+  if(Array.isArray(p.meals))S.meals=p.meals;
+  if(typeof p.auto_breaks==="boolean")S.autoBreaks=p.auto_breaks;
   if((p.loves||[]).length||(p.skips||[]).length){
     S.likes=new Set();S.skips=new Set();const moreL=[],moreS=[];
     (p.loves||[]).forEach(x=>{const t=PRESETS.find(q=>norm(q)===norm(x));t?S.likes.add(t):moreL.push(x);});
@@ -418,7 +420,7 @@ function readForm(){
     end_location:$("#endLoc").value.trim()||null,
     loves:[...S.likes,...splitList($("#moreLoves").value)],skips:[...S.skips,...splitList($("#moreSkips").value)],
     must_see:splitList($("#mustSee").value),pace:$("#pace").value,getting_around:S.mode,
-    by_neighborhood:S.blocks,user_list:$("#userList").value.split("\n").map(x=>x.replace(/^\s*(\d+[.)]|[-*•])\s*/,"").trim()).filter(Boolean)};
+    by_neighborhood:S.blocks,...(S.meals?{meals:S.meals}:{}),auto_breaks:S.autoBreaks!==false,user_list:$("#userList").value.split("\n").map(x=>x.replace(/^\s*(\d+[.)]|[-*•])\s*/,"").trim()).filter(Boolean)};
 }
 
 /* ============ server calls ============ */
@@ -556,8 +558,10 @@ function renderItin(){
   const stn=(st,num)=>{
     const tags=[];
     if(st.new)tags.push(`<span class="tag new">New</span>`);
+    if(st.notes.includes("breakfast"))tags.push(`<span class="tag gold">Breakfast slot</span>`);
     if(st.notes.includes("lunch"))tags.push(`<span class="tag gold">Lunch slot</span>`);
     if(st.notes.includes("dinner"))tags.push(`<span class="tag gold">Dinner slot</span>`);
+    if(st.notes.includes("break"))tags.push(`<span class="tag gold">Coffee break</span>`);
     if(st.notes.includes("golden"))tags.push(`<span class="tag gold">Golden hour</span>`);
     if(p.raining)tags.push(`<span class="tag rain">${st.setting==="outdoor"?"Outdoors":st.setting==="covered"?"Covered":"Indoors"}</span>`);
     tags.push(`<span class="tag">${esc(st.kind)}</span>`);
