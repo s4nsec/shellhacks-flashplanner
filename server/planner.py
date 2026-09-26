@@ -89,6 +89,7 @@ class Session:
     weather_slot: dict = field(default_factory=dict)       # node -> "dry" / "wet" the solver picked
     initial_weather_slot: dict = field(default_factory=dict)
     polylines: dict = field(default_factory=dict)
+    positions: dict = field(default_factory=dict)          # node -> (lat, lng) for live positions
     changed: set = field(default_factory=set)
     dropped: list = field(default_factory=list)
     compare: dict | None = None
@@ -97,6 +98,8 @@ class Session:
         return self.cands[node - 1]
 
     def point(self, node: int) -> tuple[float, float]:
+        if node in self.positions:
+            return self.positions[node]
         if node == 0:
             return (self.hotel["lat"], self.hotel["lng"])
         if node == self.end_node:
@@ -273,6 +276,21 @@ def leg(s: Session, a: int, b: int) -> dict:
     return {"mode": "walk", "min": 9999, "km": 0.0}  # unreachable
 
 
+def add_position(s: Session, pt: tuple[float, float], walk: list, walk_m: list, transit: list,
+                 drive: list | None = None) -> int:
+    """Add the traveler's live position as a new node, given travel times from it to every
+    existing node. Nothing is ever planned to it, so its column stays empty. Returns the node."""
+    node = len(s.walk)
+    for m, row in ((s.walk, walk), (s.walk_m, walk_m), (s.transit, transit), (s.drive, drive)):
+        if m is None:
+            continue
+        for r in m:
+            r.append(None)
+        m.append(list(row) + [0])
+    s.positions[node] = pt
+    return node
+
+
 # ---------- schedule a fixed route ----------
 
 def simulate(s: Session, route: list, t0: int, start_node: int) -> dict | None:
@@ -359,7 +377,7 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
     T = [[0 if i == j else leg(s, nodes[i], nodes[j])["min"] for j in range(n)] for i in range(n)]
     visit = [0, 0] + [visit_len(s, k) for k, _, _ in entries]
     zone = [None, None] + [s.cand(k).zone for k, _, _ in entries]
-    start_zone = s.cand(start_node).zone if start_node != 0 else None
+    start_zone = s.cand(start_node).zone if 0 < start_node <= len(s.cands) else None
     # Skipping a place costs its best copy's points; visiting a copy costs what it gives up against that.
     value = [0, 0] + [points(s, k, w) for k, _, w in entries]
     best = {}
