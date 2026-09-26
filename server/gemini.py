@@ -27,6 +27,11 @@ def client() -> genai.Client:
 # Response schemas. Fields have no defaults on purpose: the Gemini API rejects
 # default values in response schemas, so "unknown" is an empty string or list.
 
+class ParsedAppointment(BaseModel):
+    place: str
+    time: str              # HH:MM (24h)
+
+
 class ParsedTrip(BaseModel):
     city: str
     date: str               # YYYY-MM-DD or ""
@@ -37,6 +42,7 @@ class ParsedTrip(BaseModel):
     loves: list[str]
     skips: list[str]
     must_see: list[str]
+    appointments: list[ParsedAppointment]
     pace: str               # relaxed | normal | packed
     getting_around: str     # walk | transit | ride
     by_neighborhood: bool
@@ -97,11 +103,14 @@ Rules:
 - date: YYYY-MM-DD if they name a day ("tomorrow", "Saturday"), else "".
 - start_time / end_time: 24-hour HH:MM for when they're free, else "".
   If they give a duration ("6 hours from 11am"), compute end_time.
+  An appointment time is not a start or end time unless they explicitly say their day starts or ends then.
 - start_location: hotel, Airbnb, address or neighborhood they're staying in, else "".
 - end_location: where they need to finish (station, airport, hotel, address), else "".
 - loves: short interest phrases they like ("architecture", "street food", "jazz bars").
 - skips: things they want to avoid ("museums", "crowds").
 - must_see: specific places they insist on.
+- appointments: fixed-time reservations, tickets, or events as place + 24-hour
+  HH:MM time (for example, Joe Beef at 19:30). Do not put ordinary preferences here.
 - pace: "packed" if they want to see as much as possible, "relaxed" if they want it easy, else "normal".
 - getting_around: "walk" if walking only, "ride" if they mention taxis, rideshare or robotaxis, else "transit".
 - by_neighborhood: false only if they explicitly want maximum stops regardless of back-and-forth; otherwise true."""
@@ -118,7 +127,8 @@ Candidate places from Google Maps (id, name, types, rating, review count, summar
 For EVERY candidate return:
 - id: copied exactly.
 - score: 0-100, how worthwhile this place is for THIS traveler on a short visit.
-  Reward matches with "loves", penalize "skips" heavily, and give "must_see" places 95+.
+  Reward matches with "loves", penalize "skips" heavily, and give "must_see" and
+  appointment places 95+.
   Give 0 to things that aren't worth a tourist's time (hotels, generic shops, offices,
   transit stations, duplicates of another candidate).
 - kind: one of sight, museum, meal, snack, market, park, viewpoint, shopping, nightlife, other.

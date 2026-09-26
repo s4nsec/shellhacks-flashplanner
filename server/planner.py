@@ -49,6 +49,7 @@ class Cand:
     zone: int = 0
     zone_name: str = ""
     must: bool = False
+    appointment_time: int | None = None  # fixed local start time, minutes after midnight
 
 
 @dataclass
@@ -183,7 +184,8 @@ def allowed_starts(s: Session, node: int, t0: int) -> list:
     """Time intervals when a visit to this node may start."""
     c, v = s.cand(node), visit_len(s, node)
     iv = [(o, cl - v) for o, cl in c.windows if cl - v >= o]
-    if c.kind == "meal":
+    # An explicit reservation overrides the generic lunch/dinner suggestions.
+    if c.kind == "meal" and c.appointment_time is None:
         iv = intersect(iv, [LUNCH, DINNER])
     return intersect(iv, [(t0, s.deadline - v)])
 
@@ -217,12 +219,19 @@ def simulate(s: Session, route: list, t0: int, start_node: int) -> dict | None:
     for node in route:
         L = leg(s, loc, node)
         arrive = t + L["min"]
-        begin = next((max(arrive, lo) for lo, hi in allowed_starts(s, node, t0) if hi >= arrive), None)
+        c = s.cand(node)
+        starts = allowed_starts(s, node, t0)
+        if c.appointment_time is not None:
+            fixed = c.appointment_time
+            begin = fixed if arrive <= fixed and any(lo <= fixed <= hi for lo, hi in starts) else None
+        else:
+            begin = next((max(arrive, lo) for lo, hi in starts if hi >= arrive), None)
         if begin is None:
             return None
-        c = s.cand(node)
         leave = begin + visit_len(s, node)
         notes = []
+        if c.appointment_time is not None:
+            notes.append("appointment")
         if c.kind == "meal" and LUNCH[0] <= begin <= LUNCH[1]:
             notes.append("lunch")
         if c.kind == "meal" and DINNER[0] <= begin <= DINNER[1]:
@@ -276,7 +285,9 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
         return c
     routing.SetArcCostEvaluatorOfAllVehicles(routing.RegisterTransitCallback(cost_cb))
 
-    routing.AddDimension(time_idx, 240, s.deadline, False, "Time")   # up to 4h waiting
+    # A late reservation may be the only stop left, so waiting must be able to
+    # span the traveler's whole remaining day rather than stopping at four hours.
+    routing.AddDimension(time_idx, max(240, s.deadline - t0), s.deadline, False, "Time")
     time_dim = routing.GetDimensionOrDie("Time")
     time_dim.CumulVar(routing.Start(0)).SetRange(t0, t0)
     time_dim.CumulVar(routing.End(0)).SetMax(s.deadline)
@@ -289,15 +300,19 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
         k, idx = nodes[li], manager.NodeToIndex(li)
         iv = allowed_starts(s, k, t0)
         cum = time_dim.CumulVar(idx)
-        cum.SetRange(iv[0][0], iv[-1][1])
-        for (_, hi), (lo, _) in zip(iv, iv[1:]):
-            if lo - hi > 1:
-                cum.RemoveInterval(hi + 1, lo - 1)
         c = s.cand(k)
+        if c.appointment_time is not None:
+            # Reservations and shows start at their stated time, not merely near it.
+            cum.SetRange(c.appointment_time, c.appointment_time)
+        else:
+            cum.SetRange(iv[0][0], iv[-1][1])
+            for (_, hi), (lo, _) in zip(iv, iv[1:]):
+                if lo - hi > 1:
+                    cum.RemoveInterval(hi + 1, lo - 1)
         if s.sunset and c.kind == "viewpoint" and c.setting != "indoor" and not s.raining:
             time_dim.SetCumulVarSoftLowerBound(idx, s.sunset - 75, 25)
             time_dim.SetCumulVarSoftUpperBound(idx, s.sunset, 50)
-        penalty = int(points(s, k) * SCALE) + (10**7 if c.must else 0)
+        penalty = int(points(s, k) * SCALE) + (10**7 if c.must or c.appointment_time is not None else 0)
         routing.AddDisjunction([idx], penalty)
 
     params = pywrapcp.DefaultRoutingSearchParameters()
