@@ -8,6 +8,11 @@ class Appointment(BaseModel):
     time: str                            # 24-hour HH:MM
 
 
+class DayWindow(BaseModel):
+    start_time: str = "10:00"
+    end_time: str = "19:00"
+
+
 class TripRequest(BaseModel):
     city: str
     date: Optional[str] = None            # YYYY-MM-DD, local to the city; defaults to today there
@@ -19,6 +24,8 @@ class TripRequest(BaseModel):
     skips: list[str] = Field(default_factory=list)
     must_see: list[str] = Field(default_factory=list)
     appointments: list[Appointment] = Field(default_factory=list)  # fixed-time stops
+    days: int = Field(1, ge=1, le=7)
+    day_windows: list[DayWindow] = Field(default_factory=list)
     pace: Literal["relaxed", "normal", "packed"] = "normal"
     getting_around: Literal["walk", "transit", "ride"] = "transit"
     by_neighborhood: bool = True
