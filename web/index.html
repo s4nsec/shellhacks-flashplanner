@@ -102,6 +102,8 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
 .ev b{display:block;font-size:.9rem}
 .ev span{color:var(--muted);font-size:.78rem}
 .ev:disabled{opacity:.45;cursor:not-allowed}
+#behind{margin:0 0 .8rem;padding:.55rem .7rem;border-radius:10px;background:var(--goldsoft);font-size:.86rem}
+#behind button{margin-left:.4rem;font:inherit;font-weight:700;border:1px solid var(--gold);background:var(--panel);color:var(--ink);border-radius:8px;padding:.15rem .5rem;cursor:pointer}
 .latepick{display:grid;grid-template-columns:auto minmax(0,1fr) 4.5rem;gap:.6rem;align-items:center;margin-top:.65rem;font-size:.84rem;color:var(--muted)}
 .latepick label{margin:0;color:var(--muted)}
 .latepick input[type="range"]{width:100%;margin:0;accent-color:var(--blue)}
@@ -305,6 +307,7 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
     <section class="panel" id="events" aria-labelledby="h-live">
       <h2 id="h-live">Live day</h2>
       <p id="clock">Plan a day first, then tell the agent when things change.</p>
+      <p id="behind" hidden></p>
       <div class="evgrid">
         <button class="ev" data-ev="done" disabled><b>Finish next stop</b><span>Move the clock forward</span></button>
         <button class="ev" data-ev="rain" disabled><b>It's raining</b><span>Prefer indoor stops</span></button>
@@ -389,6 +392,8 @@ const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).t
 const splitList=s=>s.split(/[,\n]/).map(x=>x.trim()).filter(Boolean);
 const PRESETS=["architecture","food","views","history","art","museums","nature","shopping","nightlife","coffee"];
 const MODE_TXT={walk:"Walk only",transit:"Walk + transit",ride:"Walk + ride"};
+const BEHIND_MIN=10;  // minutes past a stop's planned leave time before offering to re-plan
+const USES_POSITION=["rain","late","tired","skip","include"];
 
 const S={likes:new Set(["architecture","food","views"]),skips:new Set(["museums"]),mode:"transit",blocks:true,
   appointments:[],lastParsed:null,fromNotes:null,startPlace:null,busy:false,plan:null,sid:null};
@@ -615,11 +620,23 @@ async function loadDemo(){
   }catch(err){failRunning();setStory(err.message,true);}
   finally{setBusy(false);}
 }
+function cityNow(p){  // the city's date and minutes after midnight, by this device's clock
+  const d=new Date(Date.now()+p.utc_offset*60000);
+  return {date:d.toISOString().slice(0,10),min:d.getUTCHours()*60+d.getUTCMinutes()};
+}
+const planIsToday=p=>!!p&&!p.demo&&p.utc_offset!=null&&cityNow(p).date===p.date;
+function devicePosition(){
+  if(!navigator.geolocation)return Promise.resolve(null);
+  return new Promise(res=>navigator.geolocation.getCurrentPosition(
+    g=>res({lat:g.coords.latitude,lng:g.coords.longitude}),()=>res(null),{timeout:8000,maximumAge:60000}));
+}
 async function replan(event,delay=30,preStep=null,placeId=null){
   if(S.busy||!S.sid)return;setBusy(true);traceReset();
   try{
     if(preStep)traceStep(preStep);
-    await stream("/api/replan",{session_id:S.sid,event,delay_minutes:delay,place_id:placeId},handleEvent);
+    const body={session_id:S.sid,event,delay_minutes:delay,place_id:placeId,client_time:new Date().toISOString()};
+    if(planIsToday(S.plan)&&USES_POSITION.includes(event))Object.assign(body,await devicePosition());
+    await stream("/api/replan",body,handleEvent);
   }catch(err){failRunning();setStory(err.message,true);}
   finally{setBusy(false);}
 }
@@ -661,6 +678,9 @@ function renderEvents(){
   const set=(k,on)=>{$(`.ev[data-ev=${k}]`).disabled=!on;};
   set("done",rem);set("skip",rem);set("rain",has&&!p.raining);set("tired",has&&!p.tired);set("late",has&&rem);set("reset",has);
   $("#lateDelay").disabled=!(has&&rem);
+  const behind=rem&&planIsToday(p)?cityNow(p).min-p.stops[0].leave:0;
+  $("#behind").hidden=behind<BEHIND_MIN;
+  if(behind>=BEHIND_MIN)$("#behind").innerHTML=`By your clock you're ${hm(behind)} behind: the plan had you leaving <strong>${esc(p.stops[0].name)}</strong> at ${fmt(p.stops[0].leave)}.<button type="button" id="behindBtn">Re-plan from now</button>`;
   $("#sayText").disabled=!has;$("#sayBtn").disabled=!has;
 }
 function legText(L){
@@ -707,7 +727,7 @@ function renderItin(){
   rows.push(`<li class="term"><span class="tm">${fmt(p.start)}</span><span class="rail"><span class="dot">H</span></span><div class="body"><div class="nm">${esc(p.hotel.name)}</div><div class="meta">Leave</div></div></li>`);
   let n=0;
   p.completed.forEach((st,i)=>{rows.push(legRow(st.leg,true));if(heads.has(i))rows.push(zoneRow(heads.get(i),true));rows.push(stn(st,++n));});
-  if(p.completed.length||p.shifted)rows.push(`<li class="now"><span class="tm">${fmt(p.now)}</span><span class="rail"><span class="dot"></span></span><div class="body"><div class="nm">You are here</div><div class="meta">${p.shifted?"Running behind the original plan":"Re-planning from this point"}</div></div></li>`);
+  if(p.completed.length||p.shifted||p.here)rows.push(`<li class="now"><span class="tm">${fmt(p.now)}</span><span class="rail"><span class="dot"></span></span><div class="body"><div class="nm">You are here</div><div class="meta">${p.shifted?"Running behind the original plan":"Re-planning from this point"}</div></div></li>`);
   p.stops.forEach((st,i)=>{rows.push(legRow(st.leg,false));const k=p.completed.length+i;if(heads.has(k))rows.push(zoneRow(heads.get(k),false));rows.push(stn(st,++n));});
   rows.push(legRow(p.back,false));
   const endsAtStart=p.end_location.lat===p.hotel.lat&&p.end_location.lng===p.hotel.lng;
@@ -844,6 +864,7 @@ function legPath(from,to,L){return L.polyline?decodePolyline(L.polyline):[[from.
 function legsOf(p){
   const legs=[];let prev=p.hotel;
   p.completed.forEach(st=>{legs.push({path:legPath(prev,st,st.leg),mode:st.leg.mode,done:true});prev=st;});
+  if(p.here)prev=p.here;
   p.stops.forEach(st=>{legs.push({path:legPath(prev,st,st.leg),mode:st.leg.mode,done:false});prev=st;});
   legs.push({path:legPath(prev,p.end_location,p.back),mode:p.back.mode,done:false});
   return legs;
@@ -884,11 +905,11 @@ const MapView={
     add({lat:p.hotel.lat,lng:p.hotel.lng},this.pin("hotel","H"),p.hotel.name,5);
     if(p.end_location.lat!==p.hotel.lat||p.end_location.lng!==p.hotel.lng)add({lat:p.end_location.lat,lng:p.end_location.lng},this.pin("hotel","E"),p.end_location.name,6);
     let n=0;p.completed.concat(p.stops).forEach(st=>add({lat:st.lat,lng:st.lng},this.pin(st.done?"done":st.new?"new":"",st.done?"✓":String(++n)),st.name,10));
-    if(p.completed.length||p.shifted){const at=p.completed.length?p.completed[p.completed.length-1]:p.hotel;add({lat:at.lat,lng:at.lng},this.pin("here"),"You are here",20);}
+    if(p.completed.length||p.shifted||p.here){const at=p.here||(p.completed.length?p.completed[p.completed.length-1]:p.hotel);add({lat:at.lat,lng:at.lng},this.pin("here"),"You are here",20);}
     this.map.fitBounds(bounds,48);
   },
   drawSvg(p){
-    const pts=[p.hotel,p.end_location,...p.completed,...p.stops,...p.others].map(q=>[q.lat,q.lng]);
+    const pts=[p.hotel,p.end_location,...(p.here?[p.here]:[]),...p.completed,...p.stops,...p.others].map(q=>[q.lat,q.lng]);
     legsOf(p).forEach(l=>pts.push(...l.path));
     let minLat=Math.min(...pts.map(q=>q[0])),maxLat=Math.max(...pts.map(q=>q[0])),minLng=Math.min(...pts.map(q=>q[1])),maxLng=Math.max(...pts.map(q=>q[1]));
     const kx=Math.cos((minLat+maxLat)/2*Math.PI/180),padLat=(maxLat-minLat)*.08+.002,padLng=(maxLng-minLng)*.08+.002/kx;
@@ -904,7 +925,7 @@ const MapView={
     if(p.end_location.lat!==p.hotel.lat||p.end_location.lng!==p.hotel.lng){const [x,y]=P(p.end_location.lat,p.end_location.lng);h+=`<rect x="${x-12}" y="${y-12}" width="24" height="24" rx="5" fill="var(--ink)"/><text x="${x}" y="${+y+4.5}" text-anchor="middle" style="font:800 13px var(--sans);fill:var(--panel)">E</text>`;}
     let n=0;p.completed.concat(p.stops).forEach(st=>{const [x,y]=P(st.lat,st.lng);
       h+=`<g><title>${esc(st.name)}</title><circle cx="${x}" cy="${y}" r="13" fill="${st.done?"var(--muted)":"var(--panel)"}" stroke="${st.new?"var(--gold)":st.done?"var(--muted)":"var(--ink)"}" stroke-width="3.5"/><text x="${x}" y="${+y+4.5}" text-anchor="middle" style="font:800 12.5px var(--sans);fill:${st.done?"var(--panel)":"var(--ink)"}">${st.done?"✓":++n}</text></g>`;});
-    if(p.completed.length||p.shifted){const at=p.completed.length?p.completed[p.completed.length-1]:p.hotel;const [x,y]=P(at.lat,at.lng);h+=`<circle cx="${+x+13}" cy="${y-13}" r="7" fill="var(--gold)" stroke="var(--panel)" stroke-width="2"/>`;}
+    if(p.completed.length||p.shifted||p.here){const at=p.here||(p.completed.length?p.completed[p.completed.length-1]:p.hotel);const [x,y]=P(at.lat,at.lng);h+=`<circle cx="${+x+13}" cy="${y-13}" r="7" fill="var(--gold)" stroke="var(--panel)" stroke-width="2"/>`;}
     const kmPx=s/111.2;h+=`<g transform="translate(24 ${H-24})"><rect y="-6" width="${kmPx.toFixed(1)}" height="6" fill="var(--ink)"/><text y="-12" style="font:600 13px var(--sans);fill:var(--muted)">1 km</text></g>`;
     const svg=$("#svgmap");svg.setAttribute("viewBox",`0 0 ${W} ${H}`);svg.innerHTML=h;
   }
@@ -945,6 +966,8 @@ $("#lateDelay").addEventListener("input",e=>{
 });
 $("#itin").addEventListener("click",e=>{const b=e.target.closest(".lock");if(b)replan(b.dataset.locked==="1"?"unlock":"lock",30,null,b.dataset.id);});
 $("#cuts").addEventListener("click",e=>{const b=e.target.closest(".putback");if(b)replan("include",30,null,b.dataset.id);});
+$("#behind").addEventListener("click",e=>{if(e.target.closest("#behindBtn"))replan("late",0);});
+setInterval(()=>{if(S.plan)renderEvents();},60000);
 $("#sayBtn").addEventListener("click",sayWhatHappened);
 $("#sayText").addEventListener("keydown",e=>{if(e.key==="Enter")sayWhatHappened();});
 </script>

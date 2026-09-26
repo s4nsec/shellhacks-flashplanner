@@ -82,8 +82,10 @@ You need Python 3.10 or newer.
   one `step` event per stage, then a `plan` event (or an `error` event).
 - `POST /api/interpret` `{session_id, text}`: Gemini function call, returns
   `{reason, delay_minutes}`.
-- `POST /api/replan` `{session_id, event, delay_minutes}` where event is
-  `done`, `rain`, `late`, `tired`, `skip` or `reset`: streams like `/api/plan`.
+- `POST /api/replan` `{session_id, event, delay_minutes, client_time, lat, lng}`
+  where event is `done`, `rain`, `late`, `tired`, `skip` or `reset`: streams
+  like `/api/plan`. `client_time` (ISO 8601) and `lat`/`lng` are optional; see
+  "Live day" below.
 
 Plans are cached in memory and backed by SQLite recipes. After a restart, the
 server rebuilds a requested plan with fresh API calls and replays its live-day
@@ -134,6 +136,15 @@ Transit matrices allow 100 pairs per request; `routes.matrix()` batches them.
 - **Weather.** The Weather API forecast starts at the current hour and covers
   10 days, so hours already past and days further out are planned as dry. Outdoor stops are steered to dry
   hours, and the "It's raining" event marks the rest of the day as rainy.
+- **Live day.** When the plan is for today in the city, re-plans use the
+  device's clock instead of assuming you kept to the schedule, and the browser
+  sends its location (if you allow it) so the rest of the day is planned from
+  where you are, using a one-row route matrix. "Finish next stop" puts you at
+  that stop at the real time and only re-plans if the rest no longer fits.
+  "Running late" adds its delay on top of the real clock. If you're more than
+  10 minutes past a stop's planned leave time, the Live day panel offers to
+  re-plan from now. Locations more than 50 km from the start are ignored.
+  Plans for other days keep the simulated clock.
 - **Transit** isn't available everywhere. Where there's no transit route, legs
   fall back to walking.
 - **"Walk + ride"** uses driving times with traffic plus 4 minutes for pickup,
