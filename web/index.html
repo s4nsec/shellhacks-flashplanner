@@ -66,6 +66,8 @@ textarea,select,input[type=time],input[type=date],input[type=text]{width:100%;bo
 textarea{resize:vertical}
 #msg{font-family:var(--serif);font-size:.95rem;line-height:1.5}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+.check{display:flex;align-items:center;gap:.5rem;margin:.85rem 0 0;font-size:.85rem;font-weight:600}
+.check input{width:1rem;height:1rem;margin:0;accent-color:var(--blue)}
 fieldset{border:0;padding:0;margin:0}
 .chips{display:flex;flex-wrap:wrap;gap:.4rem}
 .chip{border:1px solid var(--line);background:var(--land);border-radius:999px;padding:.3rem .7rem;font-size:.85rem;cursor:pointer}
@@ -255,6 +257,15 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
       <label for="mustSee">Must see</label>
       <input type="text" id="mustSee" placeholder="Comma-separated place names">
 
+      <div class="row2">
+        <label class="check" for="wheelchair"><input type="checkbox" id="wheelchair">Wheelchair accessible</label>
+        <div><label for="diet">Dietary preference</label><select id="diet">
+          <option value="">None</option>
+          <option value="vegetarian">Vegetarian</option>
+          <option value="vegan">Vegan</option>
+        </select></div>
+      </div>
+
       <fieldset>
         <legend class="lbl">Getting around</legend>
         <div class="seg" id="modeSeg">
@@ -402,6 +413,8 @@ function applyParsed(p){
   if(p.end_time)$("#tEnd").value=p.end_time;
   if(p.start_location)$("#startLoc").value=p.start_location;
   if(p.end_location)$("#endLoc").value=p.end_location;
+  $("#wheelchair").checked=Boolean(p.wheelchair_accessible);
+  $("#diet").value=(p.dietary_preferences||[]).includes("vegan")?"vegan":(p.dietary_preferences||[]).includes("vegetarian")?"vegetarian":"";
   if(p.pace)$("#pace").value=p.pace;
   if(p.getting_around)S.mode=p.getting_around;
   if(typeof p.by_neighborhood==="boolean")S.blocks=p.by_neighborhood;
@@ -422,6 +435,8 @@ function readForm(){
     end_location:$("#endLoc").value.trim()||null,
     loves:[...S.likes,...splitList($("#moreLoves").value)],skips:[...S.skips,...splitList($("#moreSkips").value)],
     must_see:splitList($("#mustSee").value),appointments:S.appointments,
+    wheelchair_accessible:$("#wheelchair").checked,
+    dietary_preferences:$("#diet").value?[$("#diet").value]:[],
     pace:$("#pace").value,getting_around:S.mode,
     by_neighborhood:S.blocks,user_list:$("#userList").value.split("\n").map(x=>x.replace(/^\s*(\d+[.)]|[-*•])\s*/,"").trim()).filter(Boolean)};
 }
