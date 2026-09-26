@@ -30,4 +30,4 @@ class InterpretRequest(BaseModel):
 class ReplanRequest(BaseModel):
     session_id: str
     event: str                            # done | rain | late | tired | skip | reset
-    delay_minutes: int = 40
+    delay_minutes: int = 30

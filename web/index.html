@@ -85,6 +85,9 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
 .ev b{display:block;font-size:.9rem}
 .ev span{color:var(--muted);font-size:.78rem}
 .ev:disabled{opacity:.45;cursor:not-allowed}
+.latepick{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.5rem;align-items:center;margin-top:.65rem;font-size:.84rem;color:var(--muted)}
+.latepick label{margin:0;color:var(--muted)}
+.latepick select{padding:.42rem .55rem;border-radius:9px}
 .say{display:flex;gap:.45rem;margin-top:.7rem}
 .say button{border:0;border-radius:10px;background:var(--ink);color:var(--panel);font-weight:600;padding:0 .9rem;cursor:pointer;white-space:nowrap}
 .say button:disabled{opacity:.45;cursor:not-allowed}
@@ -275,10 +278,18 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
       <div class="evgrid">
         <button class="ev" data-ev="done" disabled><b>Finish next stop</b><span>Move the clock forward</span></button>
         <button class="ev" data-ev="rain" disabled><b>It's raining</b><span>Prefer indoor stops</span></button>
-        <button class="ev" data-ev="late" disabled><b>Running late</b><span>Lose 40 minutes</span></button>
+        <button class="ev" data-ev="late" disabled><b>Running late</b><span>Lose the selected time</span></button>
         <button class="ev" data-ev="tired" disabled><b>I'm tired</b><span>Walk less</span></button>
         <button class="ev" data-ev="skip" disabled><b>Skip next stop</b><span>Not feeling it</span></button>
         <button class="ev" data-ev="reset" disabled><b>Start over</b><span>Back to the morning</span></button>
+      </div>
+      <div class="latepick">
+        <label for="lateDelay">Late by</label>
+        <select id="lateDelay" disabled>
+          <option value="15">15 minutes</option>
+          <option value="30" selected>30 minutes</option>
+          <option value="60">60 minutes</option>
+        </select>
       </div>
       <label for="sayText">Or say what happened</label>
       <div class="say">
@@ -480,6 +491,7 @@ function renderEvents(){
   $("#clock").innerHTML=p?`It's <strong>${fmt(p.now)}</strong> and you're at <strong>${esc(p.at)}</strong>.${p.raining?" It's raining.":""}`:"Plan a day first, then tell the agent when things change.";
   const set=(k,on)=>{$(`.ev[data-ev=${k}]`).disabled=!on;};
   set("done",rem);set("skip",rem);set("rain",has&&!p.raining);set("tired",has&&!p.tired);set("late",has&&rem);set("reset",has);
+  $("#lateDelay").disabled=!(has&&rem);
   $("#sayText").disabled=!has;$("#sayBtn").disabled=!has;
 }
 function legText(L){
@@ -635,7 +647,10 @@ function loadGoogleMaps(key){
   await MapView.init(cfg);
 })();
 $("#planBtn").addEventListener("click",planDay);
-$$(".ev").forEach(b=>b.addEventListener("click",()=>replan(b.dataset.ev)));
+$$(".ev").forEach(b=>b.addEventListener("click",()=>{
+  const delay=b.dataset.ev==="late"?Number($("#lateDelay").value)||30:40;
+  replan(b.dataset.ev,delay);
+}));
 $("#sayBtn").addEventListener("click",sayWhatHappened);
 $("#sayText").addEventListener("keydown",e=>{if(e.key==="Enter")sayWhatHappened();});
 </script>
