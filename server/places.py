@@ -15,7 +15,7 @@ SEARCH_FIELDS = ",".join("places." + f for f in [
     "id", "displayName", "location", "regularOpeningHours", "rating",
     "userRatingCount", "types", "primaryType", "formattedAddress",
     "addressComponents", "utcOffsetMinutes", "editorialSummary", "googleMapsUri",
-    "priceLevel",
+    "priceLevel", "priceRange",
 ])
 
 # Things that show up in "attractions" searches but aren't places to visit.
@@ -54,6 +54,22 @@ async def get_reviews(http: httpx.AsyncClient, place_id: str) -> list[dict]:
             out.append({"text": text, "author": author.get("displayName", "A Google user"),
                         "uri": author.get("uri", "")})
     return out
+
+
+PRICE_LEVELS = {"PRICE_LEVEL_INEXPENSIVE": 1, "PRICE_LEVEL_MODERATE": 2,
+                "PRICE_LEVEL_EXPENSIVE": 3, "PRICE_LEVEL_VERY_EXPENSIVE": 4}
+
+
+def price(place: dict) -> dict | None:
+    """Google's price per person, like Maps shows it: a range {low, high, currency}
+    (high is None for "$100+"), else a level {level: 1-4} for $ to $$$$, else None."""
+    rng = place.get("priceRange", {})
+    if "startPrice" in rng:
+        low, high = rng["startPrice"], rng.get("endPrice")
+        return {"low": int(low.get("units", 0)), "high": int(high.get("units", 0)) if high else None,
+                "currency": low.get("currencyCode", "")}
+    level = PRICE_LEVELS.get(place.get("priceLevel"))
+    return {"level": level} if level else None
 
 
 def display_name(place: dict) -> str:

@@ -56,6 +56,7 @@ class Cand:
     must: bool = False
     appointment_time: int | None = None  # fixed local start time, minutes after midnight
     cost: int = 0                 # estimated spend per person, local currency
+    price: dict | None = None     # Google's price range or level, for display
 
 
 @dataclass

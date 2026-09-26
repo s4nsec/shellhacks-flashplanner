@@ -391,7 +391,8 @@ async def plan_stream(req: TripRequest):
                     kind=j.kind if j and j.kind in planner.KIND_DEFAULT_MIN else "sight",
                     setting=j.setting if j and j.setting in planner.RAIN_FACTOR else "indoor",
                     reason=j.reason if j else "", must=must,
-                    appointment_time=appointment_times.get(p["id"]), cost=max(0, j.cost) if j else 0)
+                    appointment_time=appointment_times.get(p["id"]), cost=max(0, j.cost) if j else 0,
+                    price=places.price(p))
                 c.visit_min = planner.KIND_DEFAULT_MIN[c.kind]
                 c._raw = p
                 if c.score > 0 or must or c.appointment_time is not None or using_list:
@@ -824,7 +825,7 @@ def _stop_json(s, st, done):
             "rating": c.rating, "count": c.count, "maps_uri": c.maps_uri,
             "hours_known": c.hours_known,
             "locked": c.must or c.appointment_time is not None or st["node"] in s.locked, "must": c.must,
-            "fixed": c.appointment_time is not None, "cost": c.cost,
+            "fixed": c.appointment_time is not None, "cost": c.cost, "price": c.price,
             "opens": c.windows[0][0] if c.windows else None}
 
 

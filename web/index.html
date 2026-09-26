@@ -376,6 +376,11 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmt=m=>{m=Math.round(m);const h=Math.floor(m/60)%24,mm=((m%60)+60)%60;return `${((h+11)%12)+1}:${String(mm).padStart(2,"0")} ${h>=12?"pm":"am"}`;};
 const money=(n,cur)=>{try{return new Intl.NumberFormat(undefined,{style:"currency",currency:cur,maximumFractionDigits:0}).format(n);}catch{return `${cur} ${n}`.trim();}};
+const priceText=pr=>{
+  if(pr.level)return "$".repeat(pr.level);
+  let low;try{low=new Intl.NumberFormat(undefined,{style:"currency",currency:pr.currency,currencyDisplay:"narrowSymbol",maximumFractionDigits:0}).format(pr.low);}catch{low=`$${pr.low}`;}
+  return pr.high?`${low}–${pr.high}`:`${low}+`;
+};
 const hm=m=>{m=Math.round(m);const h=Math.floor(m/60),mm=m%60;return h?`${h}h ${String(mm).padStart(2,"0")}m`:`${mm} min`;};
 const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const splitList=s=>s.split(/[,\n]/).map(x=>x.trim()).filter(Boolean);
@@ -578,8 +583,8 @@ function renderItin(){
     let meta=`${hm(st.visit.minutes)} here`;
     if(st.wait>0&&st.opens!=null)meta+=`, opens ${fmt(st.opens)} so ${st.wait} min wait`;
     else if(st.wait>0)meta+=`, ${st.wait} min wait`;
-    if(st.cost!=null)meta+=st.cost?`. About ${money(st.cost,p.currency)}`:". Free";
     if(st.rating)meta+=`. Rated ${st.rating.toFixed(1)} (${(st.count||0).toLocaleString()})`;
+    if(st.price)meta+=`${st.rating?" · ":". "}${priceText(st.price)}`;
     const v=st.visit,quotes=(v.evidence||[]).filter(x=>x.quote),of=((v.evidence||[]).find(x=>x.of)||{}).of||quotes.length;
     const paced=v.minutes!==v.base?`, adjusted for ${esc(p.trip.pace)} pace`:"";
     let rv="";
