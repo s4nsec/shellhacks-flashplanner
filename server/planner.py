@@ -20,6 +20,9 @@ SWITCH_POINTS = 5            # cost of moving to another neighborhood
 TRAVEL_POINTS_PER_MIN = 0.03  # mild pressure against zigzagging
 SCALE = 1000                 # OR-Tools needs integers: 1 point = 1000 cost units
 LUNCH, DINNER = (690, 840), (1050, 1260)
+MEALS = {"lunch": LUNCH, "dinner": DINNER}
+MIN_SCORE = 25               # below this, a place is a poor match and never planned
+DINNER_POINTS = 1000         # skipping dinner costs more than all optional stops, less than a must-see
 KIND_DEFAULT_MIN = {"museum": 90, "meal": 60, "snack": 20, "market": 50, "park": 60,
                     "viewpoint": 30, "shopping": 45, "nightlife": 90, "sight": 45, "other": 40}
 RAIN_FACTOR = {"outdoor": 0.25, "covered": 0.75, "indoor": 1.15}
@@ -75,6 +78,8 @@ class Session:
     tired: bool = False
     route: list = field(default_factory=list)
     initial_route: list = field(default_factory=list)
+    meal_slot: dict = field(default_factory=dict)          # node -> "lunch" / "dinner" the solver picked
+    initial_meal_slot: dict = field(default_factory=dict)
     polylines: dict = field(default_factory=dict)
     changed: set = field(default_factory=set)
     dropped: list = field(default_factory=list)
@@ -175,12 +180,16 @@ def visit_len(s: Session, node: int) -> int:
     return max(15, round(c.visit_min * PACE.get(s.trip.get("pace", "normal"), 1) / 5) * 5)
 
 
-def allowed_starts(s: Session, node: int, t0: int) -> list:
-    """Time intervals when a visit to this node may start."""
+def meals_had(s: Session) -> set:
+    return {n for x in s.completed for n in x["notes"] if n in MEALS}
+
+
+def allowed_starts(s: Session, node: int, t0: int, slots: list = (LUNCH, DINNER)) -> list:
+    """Time intervals when a visit to this node may start. Meals must start in one of the slots."""
     c, v = s.cand(node), visit_len(s, node)
     iv = [(o, cl - v) for o, cl in c.windows if cl - v >= o]
     if c.kind == "meal":
-        iv = intersect(iv, [LUNCH, DINNER])
+        iv = intersect(iv, list(slots))
     return intersect(iv, [(t0, s.deadline - v)])
 
 
@@ -209,11 +218,13 @@ def leg(s: Session, a: int, b: int) -> dict:
 # ---------- schedule a fixed route ----------
 
 def simulate(s: Session, route: list, t0: int, start_node: int) -> dict | None:
-    t, loc, stops = t0, start_node, []
+    t, loc, stops, had = t0, start_node, [], meals_had(s)
     for node in route:
         L = leg(s, loc, node)
         arrive = t + L["min"]
-        begin = next((max(arrive, lo) for lo, hi in allowed_starts(s, node, t0) if hi >= arrive), None)
+        pinned = s.meal_slot.get(node)
+        slots = [MEALS[pinned]] if pinned else [w for m, w in MEALS.items() if m not in had]
+        begin = next((max(arrive, lo) for lo, hi in allowed_starts(s, node, t0, slots) if hi >= arrive), None)
         if begin is None:
             return None
         c = s.cand(node)
@@ -226,6 +237,7 @@ def simulate(s: Session, route: list, t0: int, start_node: int) -> dict | None:
         if (s.sunset and c.kind == "viewpoint" and c.setting != "indoor" and not s.raining
                 and s.sunset - 80 <= begin <= s.sunset):
             notes.append("golden")
+        had |= set(notes) & set(MEALS)
         stops.append({"node": node, "from": loc, "leg": L, "arrive": arrive, "begin": begin,
                       "wait": begin - arrive, "leave": leave, "notes": notes})
         t, loc = leave, node
@@ -244,12 +256,25 @@ def simulate(s: Session, route: list, t0: int, start_node: int) -> dict | None:
 # ---------- OR-Tools ----------
 
 def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: int = 3) -> list:
-    feasible = [k for k in cand_nodes if allowed_starts(s, k, t0)]
-    nodes = [start_node, 0] + feasible            # local 0 = start, local 1 = hotel (end)
+    # A meal becomes one copy per meal slot still open (only one copy can be picked),
+    # so the solver can cap lunch and dinner at one each.
+    had = meals_had(s)
+    snacked = any(s.cand(x["node"]).kind == "snack" for x in s.completed)
+    entries = []                                  # (node, meal slot or None)
+    for k in cand_nodes:
+        c = s.cand(k)
+        if (c.score < MIN_SCORE or c.kind == "snack" and snacked) and not c.must:
+            continue
+        if c.kind == "meal":
+            entries += [(k, m) for m, w in MEALS.items() if m not in had and allowed_starts(s, k, t0, [w])]
+        elif allowed_starts(s, k, t0):
+            entries.append((k, None))
+    nodes = [start_node, 0] + [k for k, _ in entries]  # local 0 = start, local 1 = hotel (end)
+    slot = [None, None] + [m for _, m in entries]
     n = len(nodes)
     T = [[0 if i == j else leg(s, nodes[i], nodes[j])["min"] for j in range(n)] for i in range(n)]
-    visit = [0, 0] + [visit_len(s, k) for k in feasible]
-    zone = [None, None] + [s.cand(k).zone for k in feasible]
+    visit = [0, 0] + [visit_len(s, k) for k, _ in entries]
+    zone = [None, None] + [s.cand(k).zone for k, _ in entries]
     start_zone = s.cand(start_node).zone if start_node != 0 else None
 
     manager = pywrapcp.RoutingIndexManager(n, 1, [0], [1])
@@ -277,13 +302,22 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
     time_dim.CumulVar(routing.Start(0)).SetRange(t0, t0)
     time_dim.CumulVar(routing.End(0)).SetMax(s.deadline)
 
-    meal_idx = routing.RegisterUnaryTransitCallback(
-        lambda i: 1 if manager.IndexToNode(i) >= 2 and s.cand(nodes[manager.IndexToNode(i)]).kind == "meal" else 0)
-    routing.AddDimension(meal_idx, 0, 2, True, "Meals")                # at most two meals
+    for m in MEALS:                                                     # at most one lunch, one dinner
+        meal_idx = routing.RegisterUnaryTransitCallback(
+            lambda i, m=m: 1 if slot[manager.IndexToNode(i)] == m else 0)
+        routing.AddDimension(meal_idx, 0, 1, True, m)
+    if "dinner" in slot:                                                # dinner is expected when it fits
+        routing.GetDimensionOrDie("dinner").SetCumulVarSoftLowerBound(
+            routing.End(0), 1, DINNER_POINTS * SCALE)
 
+    snack_idx = routing.RegisterUnaryTransitCallback(
+        lambda i: 1 if manager.IndexToNode(i) >= 2 and s.cand(nodes[manager.IndexToNode(i)]).kind == "snack" else 0)
+    routing.AddDimension(snack_idx, 0, 1, True, "snacks")             # at most one snack
+
+    copies = {}
     for li in range(2, n):
         k, idx = nodes[li], manager.NodeToIndex(li)
-        iv = allowed_starts(s, k, t0)
+        iv = allowed_starts(s, k, t0, [MEALS[slot[li]]] if slot[li] else list(MEALS.values()))
         cum = time_dim.CumulVar(idx)
         cum.SetRange(iv[0][0], iv[-1][1])
         for (_, hi), (lo, _) in zip(iv, iv[1:]):
@@ -293,8 +327,10 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
         if s.sunset and c.kind == "viewpoint" and c.setting != "indoor" and not s.raining:
             time_dim.SetCumulVarSoftLowerBound(idx, s.sunset - 75, 25)
             time_dim.SetCumulVarSoftUpperBound(idx, s.sunset, 50)
-        penalty = int(points(s, k) * SCALE) + (10**7 if c.must else 0)
-        routing.AddDisjunction([idx], penalty)
+        copies.setdefault(k, []).append(idx)
+    for k, idxs in copies.items():
+        penalty = int(points(s, k) * SCALE) + (10**7 if s.cand(k).must else 0)
+        routing.AddDisjunction(idxs, penalty)
 
     params = pywrapcp.DefaultRoutingSearchParameters()
     params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
@@ -304,9 +340,12 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
     sol = routing.SolveWithParameters(params)
     if sol is None:
         return []
-    route, i = [], sol.Value(routing.NextVar(routing.Start(0)))
+    route, s.meal_slot, i = [], {}, sol.Value(routing.NextVar(routing.Start(0)))
     while not routing.IsEnd(i):
-        route.append(nodes[manager.IndexToNode(i)])
+        li = manager.IndexToNode(i)
+        route.append(nodes[li])
+        if slot[li]:
+            s.meal_slot[nodes[li]] = slot[li]
         i = sol.Value(routing.NextVar(i))
     while route and simulate(s, route, t0, start_node) is None:
         route.pop()  # safety net; the model and simulate() use the same numbers
@@ -332,12 +371,14 @@ def cut_reasons(s: Session, cand_nodes: list, route: list, t0: int) -> list:
         if k in in_plan:
             continue
         c = s.cand(k)
-        if c.score < 25:
+        if c.score < MIN_SCORE and not c.must:
             why = c.reason or "Not a great match for you"
         elif not c.windows:
             why = "Closed that day"
         elif not allowed_starts(s, k, t0):
             why = "Its hours don't fit your time window"
+        elif c.kind == "snack" and any(s.cand(x).kind == "snack" for x in in_plan):
+            why = "One snack stop is enough for the day"
         elif s.raining and c.setting == "outdoor":
             why = "Outdoors, and it's raining"
         elif s.blocks and c.zone not in zones:
