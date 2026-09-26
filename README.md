@@ -113,5 +113,5 @@ Transit matrices allow 100 pairs per request; `routes.matrix()` batches them.
   fall back to walking.
 - **"Walk + ride"** uses driving times with traffic plus 4 minutes for pickup,
   a stand-in for rideshare or robotaxi.
-- **Gemini model.** If `gemini-3.8-flash` isn't available to you, set
+- **Gemini model.** If `gemini-3.1-pro-preview` isn't available to you, set
   `GEMINI_MODEL` to a current model name.
