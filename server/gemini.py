@@ -32,7 +32,6 @@ class ParsedMeal(BaseModel):
     time: str               # preferred start, HH:MM (24h)
 
 
-
 class ParsedAppointment(BaseModel):
     place: str
     time: str              # HH:MM (24h)

@@ -288,7 +288,8 @@ def mark_break_stops(cands: list, trip: dict, start: int, deadline: int) -> list
         c.break_stop = False
     if not needs_break(trip, start, deadline):
         return []
-    picks = sorted((c for c in cands if c.kind == "snack" and not c.must and c.appointment_time is None),
+    picks = sorted((c for c in cands if c.kind == "snack" and c.score >= MIN_SCORE
+                    and not c.must and c.appointment_time is None),
                    key=lambda c: -c.score)[:BREAK_CANDIDATES]
     for c in picks:
         c.break_stop = True

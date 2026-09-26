@@ -137,6 +137,13 @@ class CoffeeBreakTests(unittest.TestCase):
         self.assertEqual([c.id for c in cands if c.break_stop], ["s2", "s3", "s4"])
         self.assertLessEqual(max(c.visit_min for c in picks), planner.BREAK_MAX_VISIT_MIN)
 
+    def test_poor_match_cafes_are_not_break_options(self):
+        cands = [cand("meh", "snack", planner.MIN_SCORE - 1), cand("good", "snack", 70)]
+
+        picks = planner.mark_break_stops(cands, {"pace": "normal"}, 600, 1200)
+
+        self.assertEqual([c.id for c in picks], ["good"])
+
     def test_short_day_marks_no_breaks(self):
         cands = [cand("s1", "snack")]
 

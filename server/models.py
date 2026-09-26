@@ -8,7 +8,6 @@ class MealRequest(BaseModel):
     time: str = Field(pattern=r"^([01]?\d|2[0-3]):[0-5]\d$")  # preferred start, 24-hour HH:MM
 
 
-
 class Appointment(BaseModel):
     place: str
     time: str                            # 24-hour HH:MM
