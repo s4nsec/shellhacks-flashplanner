@@ -1,4 +1,5 @@
 """Request bodies for the HTTP API."""
+from datetime import datetime
 from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
@@ -61,3 +62,6 @@ class ReplanRequest(BaseModel):
     event: Literal["done", "rain", "late", "tired", "skip", "reset", "include", "lock", "unlock"]
     delay_minutes: int = 30
     place_id: Optional[str] = None        # for include | lock | unlock
+    client_time: Optional[datetime] = None  # the device's clock; used when the plan is for today
+    lat: Optional[float] = None           # the device's position, from browser geolocation
+    lng: Optional[float] = None

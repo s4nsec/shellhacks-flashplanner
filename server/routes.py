@@ -25,17 +25,21 @@ def _loc(pt: tuple[float, float]) -> dict:
 
 
 async def matrix(http: httpx.AsyncClient, pts: list[tuple[float, float]], mode: str,
-                 departure_iso: str | None = None) -> tuple[list[list], list[list]]:
-    """Returns (minutes, meters) as n x n lists; None where no route exists."""
+                 departure_iso: str | None = None,
+                 origins: list[tuple[float, float]] | None = None) -> tuple[list[list], list[list]]:
+    """Returns (minutes, meters) as origins x pts lists; None where no route exists.
+    Origins default to pts, giving the full n x n matrix."""
+    square = origins is None
+    origins = pts if square else origins
     n = len(pts)
-    minutes = [[None] * n for _ in range(n)]
-    meters = [[None] * n for _ in range(n)]
+    minutes = [[None] * n for _ in origins]
+    meters = [[None] * n for _ in origins]
     rows = max(1, LIMITS[mode] // n)
     headers = {"X-Goog-Api-Key": config.MAPS_KEY,
                "X-Goog-FieldMask": "originIndex,destinationIndex,duration,distanceMeters,condition"}
 
     async def fetch(offset: int):
-        body = {"origins": [_wp(p) for p in pts[offset:offset + rows]],
+        body = {"origins": [_wp(p) for p in origins[offset:offset + rows]],
                 "destinations": [_wp(p) for p in pts], "travelMode": mode}
         if mode == "TRANSIT" and departure_iso:
             body["departureTime"] = departure_iso
@@ -53,9 +57,10 @@ async def matrix(http: httpx.AsyncClient, pts: list[tuple[float, float]], mode: 
                 minutes[i][j] = math.ceil(int(e["duration"].rstrip("s")) / 60)
                 meters[i][j] = e.get("distanceMeters", 0)
 
-    await asyncio.gather(*(fetch(o) for o in range(0, n, rows)))
-    for i in range(n):
-        minutes[i][i], meters[i][i] = 0, 0
+    await asyncio.gather(*(fetch(o) for o in range(0, len(origins), rows)))
+    if square:
+        for i in range(n):
+            minutes[i][i], meters[i][i] = 0, 0
     return minutes, meters
 
 

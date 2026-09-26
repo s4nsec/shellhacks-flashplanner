@@ -34,6 +34,7 @@ MAX_SESSIONS = 50
 SHORTLIST = 20        # places that get reviews, travel times and a place in the solver
 MAX_CANDIDATES = 40   # places Gemini scores
 MODE_API = {"walk": "WALK", "transit": "TRANSIT", "ride": "DRIVE"}
+LIVE_RADIUS_KM = 50   # a device farther than this from the start point isn't in the city yet
 
 
 # ---------- small helpers ----------
@@ -620,6 +621,29 @@ async def interpret(req: InterpretRequest):
         raise HTTPException(502, f"Gemini couldn't interpret that: {e}")
 
 
+def live_minutes(s: planner.Session, client_time: datetime | None) -> int | None:
+    """The device's clock as minutes after midnight in the city, or None unless it's the plan's day."""
+    if client_time is None:
+        return None
+    if client_time.tzinfo is None:
+        client_time = client_time.replace(tzinfo=timezone.utc)
+    local = client_time.astimezone(timezone.utc) + timedelta(minutes=s.utc_offset)
+    if local.date().isoformat() != s.date:
+        return None
+    return local.hour * 60 + local.minute
+
+
+async def _add_position(http, s, pt) -> int:
+    """One-row route matrices from the device's position to every node, added as a new node."""
+    dests = [s.point(k) for k in range(len(s.walk))]
+    modes = ["WALK", "TRANSIT"] + (["DRIVE"] if s.drive is not None else [])
+    dep_iso = (datetime.now(timezone.utc) + timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = await asyncio.gather(*(routes.matrix(http, dests, m, dep_iso, origins=[pt]) for m in modes))
+    (walk, walk_m), transit = rows[0], rows[1][0]
+    drive = rows[2][0][0] if len(rows) > 2 else None
+    return planner.add_position(s, pt, walk[0], walk_m[0], transit[0], drive)
+
+
 @app.post("/api/replan")
 async def replan(req: ReplanRequest):
     return StreamingResponse(replan_stream(req), media_type="application/x-ndjson")
@@ -630,6 +654,10 @@ async def replan_stream(req: ReplanRequest):
     if not s:
         yield ev(type="error", message="That plan has expired. Plan the day again.")
         return
+    now = live_minutes(s, req.client_time)   # None: the plan isn't for today, so simulate the clock
+    here = (req.lat, req.lng) if now is not None and req.lat is not None and req.lng is not None else None
+    if here and planner.haversine_km(here, s.point(0)) > LIVE_RADIUS_KM:
+        here = None
     try:
         async with httpx.AsyncClient(timeout=40) as http:
             nodes = [k for k in range(1, len(s.cands) + 1)
@@ -670,27 +698,41 @@ async def replan_stream(req: ReplanRequest):
                     return
                 st = res["stops"][0]
                 s.completed.append(st)
-                s.now, s.loc, s.route = st["leave"], st["node"], s.route[1:]
+                s.loc, s.route = st["node"], s.route[1:]
+                s.now = st["leave"] if now is None else max(s.start, now)
                 s.changed, s.dropped = set(), []
                 nodes = [k for k in nodes if k != st["node"]]
                 nxt = planner.simulate(s, s.route, s.now, s.loc)
-                if s.route and nxt:
-                    first = nxt["stops"][0]
-                    story = (f"Done with {s.cand(st['node']).name}. Next up is {s.cand(first['node']).name}, "
-                             f"arriving around {fmt(first['arrive'])}.")
-                else:
-                    s.route = []
-                    story = (f"Done with {s.cand(st['node']).name}. That was the last stop, "
-                             f"so head to {s.end_location['name']}.")
-                yield ev(type="step", key="done", status="ok", title="Nothing to re-plan",
-                         result=f"You finished on schedule. The clock moved to {fmt(s.now)}.", fresh=True)
-                yield ev(type="plan", **_payload(s, story, planner.cut_reasons(s, nodes, s.route, s.now)))
-                return
+                if now is None or nxt or not s.route:   # otherwise you fell behind: re-plan the rest below
+                    if s.route and nxt:
+                        first = nxt["stops"][0]
+                        story = (f"Done with {s.cand(st['node']).name}. Next up is {s.cand(first['node']).name}, "
+                                 f"arriving around {fmt(first['arrive'])}.")
+                    else:
+                        s.route = []
+                        story = (f"Done with {s.cand(st['node']).name}. That was the last stop, "
+                                 f"so head to {s.end_location['name']}.")
+                    result = (f"You finished on schedule. The clock moved to {fmt(s.now)}." if now is None
+                              else f"You finished at {fmt(s.now)} by your clock, and the rest of the plan still fits.")
+                    yield ev(type="step", key="done", status="ok", title="Nothing to re-plan",
+                             result=result, fresh=True)
+                    yield ev(type="plan", **_payload(s, story, planner.cut_reasons(s, nodes, s.route, s.now)))
+                    return
 
             prev = list(s.route)
             prev_next = prev[0] if prev else None
+            if now is not None and req.event != "done":
+                s.now = max(s.now, now)
+                if here:
+                    yield step_run("locate", "Get travel times from where you are",
+                                   f"routes.computeRouteMatrix(1 x {len(s.walk)}, from your location)",
+                                   "server/routes.py: matrix()")
+                    t0 = time.perf_counter()
+                    s.loc = await _add_position(http, s, here)
+                    yield step_ok("locate", t0, f"Re-planning from your location at {fmt(s.now)}.")
             if req.event == "late":
-                s.now += max(1, req.delay_minutes)
+                # On the real clock you're already behind; the delay is extra time you still need.
+                s.now += max(1, req.delay_minutes) if now is None else max(0, req.delay_minutes)
             elif req.event == "rain":
                 s.rain_hours |= set(range(s.now // 60, 24))  # it's raining now; assume it keeps up
             elif req.event == "tired":
@@ -703,7 +745,7 @@ async def replan_stream(req: ReplanRequest):
                 s.skipped.discard(node)
                 if node not in nodes:
                     nodes.append(node)
-            else:
+            elif req.event != "done":   # "done" only gets here when the rest of the plan no longer fits
                 yield ev(type="error", message=f"Unknown event: {req.event}")
                 return
 
@@ -885,9 +927,11 @@ def _payload(s, story, cuts):
         "start": s.start, "deadline": s.deadline, "now": s.now, "sunset": s.sunset,
         "raining": s.raining, "tired": s.tired, "trip": s.trip,
         "forecast": bool(s.forecast), "rain": _rain_windows(s.rain_hours, s.start, s.deadline),
-        "hotel": s.hotel, "end_location": s.end_location,
-        "at": s.hotel["name"] if s.loc == 0 else s.cand(s.loc).name,
-        "shifted": bool(s.completed and s.now != s.completed[-1]["leave"]) or (not s.completed and s.now != s.start),
+        "utc_offset": s.utc_offset, "hotel": s.hotel, "end_location": s.end_location,
+        "at": (s.hotel["name"] if s.loc == 0 else "your current location" if s.loc in s.positions
+               else s.cand(s.loc).name),
+        "here": dict(zip(("lat", "lng"), s.positions[s.loc])) if s.loc in s.positions else None,
+        "shifted": bool(s.completed and s.now > s.completed[-1]["leave"]) or (not s.completed and s.now > s.start),
         "completed": done, "stops": upcoming, "back": back, "end": res["end"],
         "blocks": _blocks(s, all_stops) if s.blocks else [],
         "summary": {"stops": len(all_stops), "walk_km": round(walk, 1),
