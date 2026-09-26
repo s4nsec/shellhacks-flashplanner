@@ -3,6 +3,11 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
+class MealRequest(BaseModel):
+    name: Literal["breakfast", "lunch", "dinner"]
+    time: str = Field(pattern=r"^([01]?\d|2[0-3]):[0-5]\d$")  # preferred start, 24-hour HH:MM
+
+
 class Appointment(BaseModel):
     place: str
     time: str                            # 24-hour HH:MM
@@ -32,6 +37,11 @@ class TripRequest(BaseModel):
     pace: Literal["relaxed", "normal", "packed"] = "normal"
     getting_around: Literal["walk", "transit", "ride"] = "transit"
     by_neighborhood: bool = True
+    meals: list[MealRequest] = Field(default_factory=lambda: [
+        MealRequest(name="lunch", time="12:30"),
+        MealRequest(name="dinner", time="19:00"),
+    ])
+    auto_breaks: bool = True
     user_list: list[str] = Field(default_factory=list)  # place names pasted from a blog or list
     notes: str = ""                       # optional free text; the fields above win on conflict
 

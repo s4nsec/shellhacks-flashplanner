@@ -410,7 +410,7 @@ const norm=s=>s.toLowerCase().trim().replace(/s$/,"");
 // Notes only fill what the settings leave open: blank fields, new interests, must-sees and bookings.
 // What they added is remembered, so editing or clearing the notes takes it back out.
 function undoNotes(){
-  const a=S.fromNotes;S.fromNotes=null;S.appointments=[];
+  const a=S.fromNotes;S.fromNotes=null;S.appointments=[];S.meals=null;S.autoBreaks=true;
   if(!a)return;
   a.likes.forEach(t=>S.likes.delete(t));a.skips.forEach(t=>S.skips.delete(t));
   const drop=(id,xs)=>{const gone=new Set(xs.map(norm));$(id).value=splitList($(id).value).filter(x=>!gone.has(norm(x))).join(", ");};
@@ -438,6 +438,10 @@ function applyNotes(p){
   if(a.must.length)used.must_see=a.must;
   S.appointments=p.appointments||[];
   if(S.appointments.length)used.appointments=S.appointments;
+  // Meals and the coffee break come only from the notes; Gemini defaults them to lunch, dinner and a break.
+  if(Array.isArray(p.meals)){S.meals=p.meals;
+    if(p.meals.map(m=>m.name+m.time).join()!=="lunch12:30,dinner19:00")used.meals=p.meals;}
+  if(p.auto_breaks===false){S.autoBreaks=false;used.auto_breaks=false;}
   S.fromNotes=a;syncForm();
   return used;
 }
@@ -449,7 +453,7 @@ function readForm(){
     loves:[...S.likes,...splitList($("#moreLoves").value)],skips:[...S.skips,...splitList($("#moreSkips").value)],
     must_see:splitList($("#mustSee").value),appointments:S.appointments,
     pace:$("#pace").value,getting_around:S.mode,
-    by_neighborhood:S.blocks,notes:$("#msg").value.trim(),user_list:$("#userList").value.split("\n").map(x=>x.replace(/^\s*(\d+[.)]|[-*•])\s*/,"").trim()).filter(Boolean)};
+    by_neighborhood:S.blocks,...(S.meals?{meals:S.meals}:{}),auto_breaks:S.autoBreaks!==false,notes:$("#msg").value.trim(),user_list:$("#userList").value.split("\n").map(x=>x.replace(/^\s*(\d+[.)]|[-*•])\s*/,"").trim()).filter(Boolean)};
 }
 
 /* ============ "Start at" suggestions (Places API via the browser key) ============ */
@@ -676,9 +680,11 @@ function renderItin(){
   const stn=(st,num)=>{
     const tags=[];
     if(st.new)tags.push(`<span class="tag new">New</span>`);
+    if(st.notes.includes("breakfast"))tags.push(`<span class="tag gold">Breakfast slot</span>`);
     if(!st.done&&st.locked&&!st.fixed)tags.push(`<span class="tag">${st.must?"Must-see":"Locked"}</span>`);
     if(st.notes.includes("lunch"))tags.push(`<span class="tag gold">Lunch slot</span>`);
     if(st.notes.includes("dinner"))tags.push(`<span class="tag gold">Dinner slot</span>`);
+    if(st.notes.includes("break"))tags.push(`<span class="tag gold">Coffee break</span>`);
     if(st.notes.includes("golden"))tags.push(`<span class="tag gold">Golden hour</span>`);
     if(st.notes.includes("appointment"))tags.push(`<span class="tag gold">Fixed time</span>`);
     if(st.notes.includes("rain"))tags.push(`<span class="tag rain">${st.setting==="outdoor"?"Outdoors":st.setting==="covered"?"Covered":"Indoors"}</span>`);
