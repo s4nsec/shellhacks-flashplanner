@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Sightline: AI day planner</title>
+<title>FlashPlanner: AI day planner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
@@ -52,7 +52,7 @@ a{color:var(--blue)}
 @media (max-width:1180px){.grid{grid-template-columns:330px minmax(0,1fr)}.col-l{grid-row:1 / span 2}}
 @media (max-width:760px){
   .grid{display:flex;flex-direction:column}.col{display:contents}
-  #tripForm{order:1}.story{order:2}.mapwrap{order:3}#events{order:4}.itin{order:5}.compare{order:6}.tracep{order:7}
+  #tripForm{order:1}.story{order:2}.mapwrap{order:3}.itin{order:4}.compare{order:5}.tracep{order:6}
 }
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:1.1rem}
 .panelhead{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;margin-bottom:.75rem}
@@ -104,23 +104,6 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
 .secondary{background:var(--land);border:1px solid var(--line);color:var(--ink);white-space:nowrap}
 .secondary:disabled{opacity:.6;cursor:progress}
 
-#clock{margin:0 0 .8rem;font-size:.9rem;color:var(--muted)}
-#clock strong{color:var(--ink)}
-.evgrid{display:grid;grid-template-columns:1fr 1fr;gap:.45rem}
-.ev{border:1px solid var(--line);background:var(--land);border-radius:10px;padding:.55rem .6rem;text-align:left;cursor:pointer;font-size:.86rem;line-height:1.25}
-.ev b{display:block;font-size:.9rem}
-.ev span{color:var(--muted);font-size:.78rem}
-.ev:disabled{opacity:.45;cursor:not-allowed}
-#behind{margin:0 0 .8rem;padding:.55rem .7rem;border-radius:10px;background:var(--goldsoft);font-size:.86rem}
-#behind button{margin-left:.4rem;font:inherit;font-weight:700;border:1px solid var(--gold);background:var(--panel);color:var(--ink);border-radius:8px;padding:.15rem .5rem;cursor:pointer}
-.latepick{display:grid;grid-template-columns:auto minmax(0,1fr) 4.5rem;gap:.6rem;align-items:center;margin-top:.65rem;font-size:.84rem;color:var(--muted)}
-.latepick label{margin:0;color:var(--muted)}
-.latepick input[type="range"]{width:100%;margin:0;accent-color:var(--blue)}
-.latepick output{text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
-.say{display:flex;gap:.45rem;margin-top:.7rem}
-.say button{border:0;border-radius:10px;background:var(--ink);color:var(--panel);font-weight:600;padding:0 .9rem;cursor:pointer;white-space:nowrap}
-.say button:disabled{opacity:.45;cursor:not-allowed}
-
 #trace{list-style:none;margin:0;padding:0;counter-reset:s}
 #trace li{position:relative;padding:0 0 .85rem 2rem;counter-increment:s}
 #trace li::before{content:counter(s);position:absolute;left:0;top:0;width:1.35rem;height:1.35rem;border-radius:50%;display:grid;place-items:center;font-size:.72rem;font-weight:700;border:2px solid var(--line);color:var(--muted);background:var(--panel)}
@@ -135,6 +118,7 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
 #trace .src{font-size:.74rem;color:var(--muted);opacity:.8}
 #trace pre{background:var(--codebg);border:1px solid var(--line);border-radius:8px;padding:.6rem;font-family:var(--mono);font-size:.72rem;overflow-x:auto;margin:.4rem 0 0}
 .empty{color:var(--muted);font-size:.88rem;margin:0;padding:0!important}
+#trace li.empty::before{display:none}
 @keyframes pulse{50%{opacity:.35}}
 
 .story{display:flex;gap:.9rem;align-items:flex-start}
@@ -239,7 +223,7 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
       <circle cx="38" cy="12" r="3.2" fill="var(--gold)" stroke="var(--ink)" stroke-width="2"/>
     </svg>
     <div>
-      <h1>Sightline</h1>
+      <h1>FlashPlanner</h1>
       <p>Tell it how long you have in a new city. It picks what's worth seeing and the order to see it in, then re-plans when the day changes.</p>
     </div>
   </div>
@@ -332,30 +316,6 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
       </div>
     </section>
 
-    <section class="panel" id="events" aria-labelledby="h-live">
-      <h2 id="h-live">Live day</h2>
-      <p id="clock">Plan a day first, then tell the agent when things change.</p>
-      <p id="behind" hidden></p>
-      <div class="evgrid">
-        <button class="ev" data-ev="done" disabled><b>Finish next stop</b><span>Move the clock forward</span></button>
-        <button class="ev" data-ev="rain" disabled><b>It's raining</b><span>Prefer indoor stops</span></button>
-        <button class="ev" data-ev="late" disabled><b>Running late</b><span>Lose the selected time</span></button>
-        <button class="ev" data-ev="tired" disabled><b>I'm tired</b><span>Walk less</span></button>
-        <button class="ev" data-ev="skip" disabled><b>Skip next stop</b><span>Not feeling it</span></button>
-        <button class="ev" data-ev="reset" disabled><b>Start over</b><span>Back to the morning</span></button>
-      </div>
-      <div class="latepick">
-        <label for="lateDelay">Late by</label>
-        <input id="lateDelay" type="range" min="5" max="120" step="5" value="30" aria-valuetext="30 minutes" disabled>
-        <output id="lateDelayValue" for="lateDelay">30 min</output>
-      </div>
-      <label for="sayText">Or say what happened</label>
-      <div class="say">
-        <input type="text" id="sayText" placeholder="Ugh, it just started pouring" disabled>
-        <button type="button" id="sayBtn" disabled>Tell agent</button>
-      </div>
-    </section>
-
     <section class="panel tracep" aria-labelledby="h-trace">
       <h2 id="h-trace">What the agent did</h2>
       <ol id="trace"><li class="empty">Each real API call shows up here as it runs.</li></ol>
@@ -383,7 +343,7 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
 
     <section class="panel compare" id="compare" hidden aria-labelledby="h-cmp">
       <h2 id="h-cmp">Why ordering matters</h2>
-      <p>Same places, same hours. Sightline versus visiting Google's "top attractions" list in its own order.</p>
+      <p>Same places, same hours. FlashPlanner versus visiting Google's "top attractions" list in its own order.</p>
       <div class="bars" id="bars"></div>
       <div class="keys">
         <span><i style="background:var(--blue)"></i>Sightseeing</span>
@@ -428,7 +388,6 @@ const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).t
 const splitList=s=>s.split(/[,\n]/).map(x=>x.trim()).filter(Boolean);
 const PRESETS=["architecture","food","views","history","art","museums","nature","shopping","nightlife","coffee"];
 const MODE_TXT={walk:"Walk only",transit:"Walk + transit",ride:"Walk + ride"};
-const BEHIND_MIN=10;  // minutes past a stop's planned leave time before offering to re-plan
 const USES_POSITION=["rain","late","tired","skip","include"];
 
 const S={likes:new Set(["architecture","food","views"]),skips:new Set(["museums"]),mode:"transit",blocks:true,
@@ -645,7 +604,7 @@ function failRunning(){ $$("#trace li.run").forEach(li=>{li.className="fail";});
 function setStory(text,isError=false){$("#story").textContent=text;$("#storyBox").classList.toggle("error",isError);}
 function setBusy(b){
   S.busy=b;$("#planBtn").disabled=b;$("#demoBtn").disabled=b;
-  $("#planBtn").textContent=b?"Planning…":"Plan my day";renderEvents();
+  $("#planBtn").textContent=b?"Planning…":"Plan my day";
 }
 
 /* ============ plan & replan ============ */
@@ -705,18 +664,6 @@ async function replan(event,delay=30,preStep=null,placeId=null){
   }catch(err){failRunning();setStory(err.message,true);}
   finally{setBusy(false);}
 }
-async function sayWhatHappened(){
-  const text=$("#sayText").value.trim();if(!text||S.busy||!S.sid)return;
-  setBusy(true);traceReset();
-  traceStep({key:"interp",status:"run",title:"Understand what changed",call:"gemini.generate_content(text, tools=[replan])",source:"server/gemini.py: interpret_event()"});
-  let call,t0=performance.now();
-  try{call=await postJSON("/api/interpret",{session_id:S.sid,text});}
-  catch(err){failRunning();setStory(err.message,true);setBusy(false);return;}
-  setBusy(false);$("#sayText").value="";
-  await replan(call.reason,call.delay_minutes,{key:"interp",status:"ok",title:"Understand what changed",
-    call:`replan(reason="${call.reason}"${call.reason==="late"?`, delay_minutes=${call.delay_minutes}`:""})`,
-    source:"server/gemini.py: interpret_event()",result:"Gemini turned your message into a function call.",ms:Math.round(performance.now()-t0)});
-}
 function handleEvent(e){
   if(e.type==="step")traceStep(e);
   else if(e.type==="plan"){
@@ -730,7 +677,7 @@ function handleEvent(e){
 /* ============ rendering ============ */
 function renderAll(){
   setStory(S.plan.story||"");
-  renderDayTabs();renderItin();renderEvents();renderCompare();MapView.draw(S.plan);
+  renderDayTabs();renderItin();renderCompare();MapView.draw(S.plan);
   const maps=$("#mapsBtn"),stops=planStops(S.plan);
   maps.href=googleMapsUrl(S.plan);maps.setAttribute("aria-disabled","false");
   maps.title=stops.length>9?"Google Maps supports up to 9 waypoints; this link includes the first 9.":"Open this route in Google Maps";
@@ -743,21 +690,6 @@ function renderDayTabs(){
   box.innerHTML=S.days.map((p,i)=>`<button type="button" data-day="${i}" aria-pressed="${i===S.activeDay}">Day ${i+1} · ${esc(p.date)}</button>`).join("");
 }
 $("#dayTabs").addEventListener("click",e=>{const b=e.target.closest("button[data-day]");if(!b)return;S.activeDay=Number(b.dataset.day);S.plan=S.days[S.activeDay];S.sid=S.plan.session_id;renderAll();});
-function renderEvents(){
-  const p=S.plan,demo=!!p?.demo,has=!!p&&!S.busy&&!demo,rem=has&&p.stops.length>0;
-  $("#clock").innerHTML=p
-    ? demo
-      ? `Demo plan loaded. Add API keys to re-plan live.`
-      : `It's <strong>${fmt(p.now)}</strong> and you're at <strong>${esc(p.at)}</strong>.${p.raining?" It's raining.":""}`
-    : "Plan a day first, then tell the agent when things change.";
-  const set=(k,on)=>{$(`.ev[data-ev=${k}]`).disabled=!on;};
-  set("done",rem);set("skip",rem);set("rain",has&&!p.raining);set("tired",has&&!p.tired);set("late",has&&rem);set("reset",has);
-  $("#lateDelay").disabled=!(has&&rem);
-  const behind=rem&&planIsToday(p)?cityNow(p).min-p.stops[0].leave:0;
-  $("#behind").hidden=behind<BEHIND_MIN;
-  if(behind>=BEHIND_MIN)$("#behind").innerHTML=`By your clock you're ${hm(behind)} behind: the plan had you leaving <strong>${esc(p.stops[0].name)}</strong> at ${fmt(p.stops[0].leave)}.<button type="button" id="behindBtn">Re-plan from now</button>`;
-  $("#sayText").disabled=!has;$("#sayBtn").disabled=!has;
-}
 function legText(L){
   if(L.mode==="walk")return `Walk ${L.min} min, ${L.km.toFixed(1)} km`;
   if(L.mode==="ride"){const f=L.fare;return `Ride ${L.min} min (incl. pickup)${f?`, est. $${f.low.toFixed(0)}–$${f.high.toFixed(0)}`:""}`;}
@@ -826,7 +758,7 @@ function renderCompare(){
   if(c&&c.plan&&c.naive){
     const pct=v=>Math.max(0,v/c.window*100).toFixed(2)+"%";
     const row=(label,x)=>`<div class="nm">${label}<small>${x.stops} stops, ${hm(x.travel)} moving</small></div><div class="bar" role="img" aria-label="${label}: ${hm(x.see)} sightseeing, ${hm(x.travel)} getting around, ${hm(x.waited)} waiting"><span class="see" style="width:${pct(x.see)}"></span><span class="move" style="width:${pct(x.travel)}"></span><span class="waitb" style="width:${pct(x.waited)}"></span></div>`;
-    $("#bars").innerHTML=row("Sightline",c.plan)+row("List order",c.naive);
+    $("#bars").innerHTML=row("FlashPlanner",c.plan)+row("List order",c.naive);
   }
   ride.hidden=!r;if(!r)return;
   const cv=r.coverage,tf=r.transit.minutes==null?"Unavailable":hm(r.transit.minutes);
@@ -834,7 +766,7 @@ function renderCompare(){
 }
 function itineraryText(p){
   const lines=[
-    `Sightline plan for ${p.city} (${p.date})`,
+    `FlashPlanner plan for ${p.city} (${p.date})`,
     `${fmt(p.start)} leave ${p.hotel.name}; finish at ${p.end_location.name} around ${fmt(p.end)}`,
     `${p.summary.stops} stops, ${p.summary.walk_km.toFixed(1)} km walking, ${hm(p.summary.moving)} moving`,
     ""
@@ -891,14 +823,14 @@ function icsFold(line){
 }
 function itineraryCalendar(plans){
   const first=plans[0],stamp=icsUtcStamp(),lines=[
-    "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Sightline//Trip Plan//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH",
-    `X-WR-CALNAME:${icsEscape(`Sightline - ${first.city}`)}`
+    "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//FlashPlanner//Trip Plan//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH",
+    `X-WR-CALNAME:${icsEscape(`FlashPlanner - ${first.city}`)}`
   ];
   plans.forEach(p=>planStops(p).forEach((st,index)=>{
     const rawId=String(st.id||st.name).replace(/[^A-Za-z0-9.-]/g,"-");
     const details=[`Travel from previous stop: ${legText(st.leg)}`];
     if(st.reason)details.push(`Why: ${st.reason}`);
-    lines.push("BEGIN:VEVENT",`UID:${p.date}-${index+1}-${rawId}@sightline.local`,`DTSTAMP:${stamp}`,
+    lines.push("BEGIN:VEVENT",`UID:${p.date}-${index+1}-${rawId}@flashplanner.local`,`DTSTAMP:${stamp}`,
       `DTSTART:${icsStamp(p.date,st.begin)}`,`DTEND:${icsStamp(p.date,st.leave)}`,
       `SUMMARY:${icsEscape(st.name)}`,`LOCATION:${icsEscape(`${st.name} (${st.lat}, ${st.lng})`)}`,
       `GEO:${st.lat};${st.lng}`,`DESCRIPTION:${icsEscape(details.join("\n"))}`);
@@ -913,7 +845,7 @@ function downloadCalendar(){
   const plans=S.days||[S.plan],blob=new Blob([itineraryCalendar(plans)],{type:"text/calendar;charset=utf-8"});
   const url=URL.createObjectURL(blob),a=document.createElement("a");
   const city=S.plan.city.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"trip";
-  a.href=url;a.download=`${city}-${S.plan.date}-sightline.ics`;document.body.appendChild(a);a.click();a.remove();
+  a.href=url;a.download=`${city}-${S.plan.date}-flashplanner.ics`;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),0);
 }
 async function copyPlan(){
@@ -1014,11 +946,11 @@ const MapView={
 };
 function loadGoogleMaps(key){
   return new Promise((resolve,reject)=>{
-    window.__sightlineMaps=()=>resolve();
+    window.__flashPlannerMaps=()=>resolve();
     window.gm_authFailure=()=>{MapView.kind="svg";$("#gmap").innerHTML=`<svg id="svgmap"></svg>`;$("#gmap").style.height="auto";
       $("#mapNote").textContent="The Maps browser key was rejected. Check its API and referrer restrictions.";if(S.plan)MapView.draw(S.plan);};
     const s=document.createElement("script");
-    s.src=`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async&libraries=marker,geometry&callback=__sightlineMaps`;
+    s.src=`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async&libraries=marker,geometry&callback=__flashPlannerMaps`;
     s.async=true;s.onerror=()=>reject(new Error("Maps JavaScript API failed to load"));
     document.head.appendChild(s);
   });
@@ -1037,21 +969,8 @@ $("#planBtn").addEventListener("click",planDay);
 $("#demoBtn").addEventListener("click",loadDemo);
 $("#icsBtn").addEventListener("click",downloadCalendar);
 $("#copyBtn").addEventListener("click",copyPlan);
-$$(".ev").forEach(b=>b.addEventListener("click",()=>{
-  const delay=b.dataset.ev==="late"?Number($("#lateDelay").value)||30:30;
-  replan(b.dataset.ev,delay);
-}));
-$("#lateDelay").addEventListener("input",e=>{
-  const minutes=Number(e.target.value)||30;
-  $("#lateDelayValue").value=`${minutes} min`;
-  e.target.setAttribute("aria-valuetext",`${minutes} minutes`);
-});
 $("#itin").addEventListener("click",e=>{const b=e.target.closest(".lock");if(b)replan(b.dataset.locked==="1"?"unlock":"lock",30,null,b.dataset.id);});
 $("#cuts").addEventListener("click",e=>{const b=e.target.closest(".putback");if(b)replan("include",30,null,b.dataset.id);});
-$("#behind").addEventListener("click",e=>{if(e.target.closest("#behindBtn"))replan("late",0);});
-setInterval(()=>{if(S.plan)renderEvents();},60000);
-$("#sayBtn").addEventListener("click",sayWhatHappened);
-$("#sayText").addEventListener("keydown",e=>{if(e.key==="Enter")sayWhatHappened();});
 </script>
 </body>
 </html>
