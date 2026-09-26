@@ -60,9 +60,12 @@ a{color:var(--blue)}
 .export-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.35rem}
 .smallbtn{display:inline-flex;align-items:center;border:1px solid var(--line);background:var(--land);color:var(--ink);border-radius:8px;padding:.28rem .55rem;font-size:.8rem;font-weight:700;line-height:1.2;text-decoration:none;cursor:pointer}
 .smallbtn:disabled,.smallbtn[aria-disabled=true]{opacity:.45;cursor:not-allowed;pointer-events:none}
+.day-tabs{display:flex;gap:.4rem;overflow-x:auto;margin:0 0 .8rem;padding-bottom:.15rem}
+.day-tabs button{border:1px solid var(--line);background:var(--land);border-radius:999px;padding:.35rem .65rem;white-space:nowrap;cursor:pointer;font-size:.8rem}
+.day-tabs button[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--panel);font-weight:700}
 
 label,.lbl{display:block;font-size:.85rem;font-weight:600;margin:.85rem 0 .35rem}
-textarea,select,input[type=time],input[type=date],input[type=text]{width:100%;border:1px solid var(--line);border-radius:10px;background:var(--land);padding:.55rem .65rem}
+textarea,select,input[type=time],input[type=date],input[type=text],input[type=number]{width:100%;border:1px solid var(--line);border-radius:10px;background:var(--land);padding:.55rem .65rem}
 textarea{resize:vertical}
 #msg{font-family:var(--serif);font-size:.95rem;line-height:1.5}
 .ac{position:relative}
@@ -74,6 +77,10 @@ textarea{resize:vertical}
 .picked{margin:.3rem 0 0;font-size:.78rem;color:var(--muted);overflow-wrap:anywhere}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+.day-windows{display:grid;gap:.45rem;margin-top:.55rem}
+.day-window{display:grid;grid-template-columns:3rem 1fr 1fr;gap:.45rem;align-items:end}
+.day-window b{padding-bottom:.55rem;font-size:.8rem;color:var(--muted)}
+.day-window label{margin:0;font-size:.75rem;color:var(--muted)}
 .check{display:flex;align-items:center;gap:.5rem;margin:.85rem 0 0;font-size:.85rem;font-weight:600}
 .check input{width:1rem;height:1rem;margin:0;accent-color:var(--blue)}
 fieldset{border:0;padding:0;margin:0}
@@ -247,6 +254,9 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
       <input type="text" id="city" placeholder="Montreal" autocomplete="off">
       <label for="date">Date</label>
       <input type="date" id="date">
+      <label for="days">Number of days</label>
+      <input type="number" id="days" min="1" max="7" value="1">
+      <div class="day-windows" id="dayWindows"></div>
       <div class="row2">
         <div class="ac"><label for="startLoc">Start at</label><input type="text" id="startLoc" placeholder="Hotel or address"
           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="startLocList" aria-describedby="startLocPicked" autocomplete="off">
@@ -391,6 +401,7 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
           <button class="smallbtn" id="copyBtn" type="button" disabled>Copy</button>
         </div>
       </div>
+      <div class="day-tabs" id="dayTabs" hidden aria-label="Trip days"></div>
       <div id="summary">Your stops will line up here like stations on a transit line.</div>
       <ol id="itin"></ol>
       <div id="cuts"></div>
@@ -412,7 +423,8 @@ const BEHIND_MIN=10;  // minutes past a stop's planned leave time before offerin
 const USES_POSITION=["rain","late","tired","skip","include"];
 
 const S={likes:new Set(["architecture","food","views"]),skips:new Set(["museums"]),mode:"transit",blocks:true,
-  appointments:[],lastParsed:null,fromNotes:null,startPlace:null,busy:false,plan:null,sid:null};
+  appointments:[],lastParsed:null,fromNotes:null,startPlace:null,busy:false,plan:null,sid:null,
+  days:null,activeDay:0};
 
 /* ============ form ============ */
 $("#chips").innerHTML=PRESETS.map(t=>`<button type="button" class="chip" data-tag="${t}">${t[0].toUpperCase()+t.slice(1)}</button>`).join("");
@@ -427,6 +439,14 @@ $("#modeSeg").addEventListener("click",e=>{const b=e.target.closest("button");if
 $("#styleSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(b){S.blocks=b.dataset.blocks==="1";syncForm();}});
 syncForm();
 
+function syncDayWindows(values=[]){
+  const n=Math.max(1,Math.min(7,Number($("#days").value)||1));$("#days").value=n;
+  const old=$$("#dayWindows .day-window").map(r=>({start_time:r.querySelector(".day-start").value,end_time:r.querySelector(".day-end").value}));
+  if(n===1){$("#dayWindows").innerHTML="";return;}
+  $("#dayWindows").innerHTML=Array.from({length:n},(_,i)=>{const w=values[i]||old[i]||{start_time:$("#tStart").value||"10:00",end_time:$("#tEnd").value||"19:00"};return `<div class="day-window"><b>Day ${i+1}</b><label>Start<input class="day-start" type="time" value="${esc(w.start_time)}"></label><label>Finish<input class="day-end" type="time" value="${esc(w.end_time)}"></label></div>`;}).join("");
+}
+$("#days").addEventListener("change",()=>syncDayWindows());
+
 const norm=s=>s.toLowerCase().trim().replace(/s$/,"");
 // Notes only fill what the settings leave open: blank fields, new interests, must-sees and bookings.
 // What they added is remembered, so editing or clearing the notes takes it back out.
@@ -438,6 +458,7 @@ function undoNotes(){
   drop("#moreLoves",a.moreLoves);drop("#moreSkips",a.moreSkips);drop("#mustSee",a.must);
   if(a.wheelchair)$("#wheelchair").checked=false;
   if(a.diet)$("#diet").value="";
+  if(a.days){$("#days").value=1;syncDayWindows();}
   syncForm();
 }
 function applyNotes(p){
@@ -467,6 +488,9 @@ function applyNotes(p){
     (p.dietary_preferences||[]).includes("vegetarian")?"vegetarian":"";
   a.diet=diet&&!$("#diet").value;
   if(a.diet){$("#diet").value=diet;used.dietary_preferences=[diet];}
+  a.days=(p.days||1)>1&&Number($("#days").value)===1;
+  if(a.days){$("#days").value=p.days;syncDayWindows(p.day_windows||[]);
+    used.days=p.days;if((p.day_windows||[]).length)used.day_windows=p.day_windows;}
   // Meals and the coffee break come only from the notes; Gemini defaults them to lunch, dinner and a break.
   if(Array.isArray(p.meals)){S.meals=p.meals;
     if(p.meals.map(m=>m.name+m.time).join()!=="lunch12:30,dinner19:00")used.meals=p.meals;}
@@ -475,12 +499,14 @@ function applyNotes(p){
   return used;
 }
 function readForm(){
+  const days=Math.max(1,Math.min(7,Number($("#days").value)||1));
   return {city:$("#city").value.trim(),date:$("#date").value||null,
     start_time:$("#tStart").value||"10:00",end_time:$("#tEnd").value||"19:00",
     start_location:$("#startLoc").value.trim()||null,start_place:S.startPlace,
     end_location:$("#endLoc").value.trim()||null,
     loves:[...S.likes,...splitList($("#moreLoves").value)],skips:[...S.skips,...splitList($("#moreSkips").value)],
-    must_see:splitList($("#mustSee").value),appointments:S.appointments,
+    must_see:splitList($("#mustSee").value),appointments:S.appointments,days,
+    day_windows:$$("#dayWindows .day-window").map(r=>({start_time:r.querySelector(".day-start").value,end_time:r.querySelector(".day-end").value})),
     wheelchair_accessible:$("#wheelchair").checked,
     dietary_preferences:$("#diet").value?[$("#diet").value]:[],
     pace:$("#pace").value,getting_around:S.mode,
@@ -614,6 +640,7 @@ function setBusy(b){
 /* ============ plan & replan ============ */
 async function planDay(){
   if(S.busy)return;setBusy(true);traceReset();
+  S.days=null;S.activeDay=0;
   try{
     const text=$("#msg").value.trim();
     if(!text){undoNotes();S.lastParsed=null;}
@@ -635,6 +662,7 @@ async function planDay(){
 }
 async function loadDemo(){
   if(S.busy)return;setBusy(true);traceReset();
+  S.days=null;S.activeDay=0;
   try{
     traceStep({key:"demo",status:"run",title:"Load judge demo",call:"GET /api/demo",source:"server/main.py: demo_plan()"});
     const t0=performance.now();
@@ -680,20 +708,30 @@ async function sayWhatHappened(){
 }
 function handleEvent(e){
   if(e.type==="step")traceStep(e);
-  else if(e.type==="plan"){S.plan=e;S.sid=e.session_id;renderAll();}
+  else if(e.type==="plan"){
+    if(e.multi_day){S.days=e.days;S.activeDay=0;S.plan=S.days[0];}
+    else{S.plan=e;if(S.days)S.days[S.activeDay]=e;}
+    S.sid=S.plan.session_id;renderAll();
+  }
   else if(e.type==="error"){failRunning();setStory(e.message,true);}
 }
 
 /* ============ rendering ============ */
 function renderAll(){
   setStory(S.plan.story||"");
-  renderItin();renderEvents();renderCompare();MapView.draw(S.plan);
+  renderDayTabs();renderItin();renderEvents();renderCompare();MapView.draw(S.plan);
   const maps=$("#mapsBtn"),stops=planStops(S.plan);
   maps.href=googleMapsUrl(S.plan);maps.setAttribute("aria-disabled","false");
   maps.title=stops.length>9?"Google Maps supports up to 9 waypoints; this link includes the first 9.":"Open this route in Google Maps";
   $("#icsBtn").disabled=false;
   $("#copyBtn").disabled=!S.plan;
 }
+function renderDayTabs(){
+  const box=$("#dayTabs"),many=S.days&&S.days.length>1;box.hidden=!many;
+  if(!many){box.innerHTML="";return;}
+  box.innerHTML=S.days.map((p,i)=>`<button type="button" data-day="${i}" aria-pressed="${i===S.activeDay}">Day ${i+1} · ${esc(p.date)}</button>`).join("");
+}
+$("#dayTabs").addEventListener("click",e=>{const b=e.target.closest("button[data-day]");if(!b)return;S.activeDay=Number(b.dataset.day);S.plan=S.days[S.activeDay];S.sid=S.plan.session_id;renderAll();});
 function renderEvents(){
   const p=S.plan,demo=!!p?.demo,has=!!p&&!S.busy&&!demo,rem=has&&p.stops.length>0;
   $("#clock").innerHTML=p
@@ -838,12 +876,12 @@ function icsFold(line){
   parts.push((parts.length?" ":"")+chunk);
   return parts.join("\r\n");
 }
-function itineraryCalendar(p){
-  const stamp=icsUtcStamp(),lines=[
+function itineraryCalendar(plans){
+  const first=plans[0],stamp=icsUtcStamp(),lines=[
     "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Sightline//Trip Plan//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH",
-    `X-WR-CALNAME:${icsEscape(`Sightline - ${p.city}`)}`
+    `X-WR-CALNAME:${icsEscape(`Sightline - ${first.city}`)}`
   ];
-  planStops(p).forEach((st,index)=>{
+  plans.forEach(p=>planStops(p).forEach((st,index)=>{
     const rawId=String(st.id||st.name).replace(/[^A-Za-z0-9.-]/g,"-");
     const details=[`Travel from previous stop: ${legText(st.leg)}`];
     if(st.reason)details.push(`Why: ${st.reason}`);
@@ -853,13 +891,13 @@ function itineraryCalendar(p){
       `GEO:${st.lat};${st.lng}`,`DESCRIPTION:${icsEscape(details.join("\n"))}`);
     if(st.maps_uri)lines.push(`URL:${st.maps_uri}`);
     lines.push("END:VEVENT");
-  });
+  }));
   lines.push("END:VCALENDAR");
   return lines.map(icsFold).join("\r\n")+"\r\n";
 }
 function downloadCalendar(){
   if(!S.plan)return;
-  const blob=new Blob([itineraryCalendar(S.plan)],{type:"text/calendar;charset=utf-8"});
+  const plans=S.days||[S.plan],blob=new Blob([itineraryCalendar(plans)],{type:"text/calendar;charset=utf-8"});
   const url=URL.createObjectURL(blob),a=document.createElement("a");
   const city=S.plan.city.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"trip";
   a.href=url;a.download=`${city}-${S.plan.date}-sightline.ics`;document.body.appendChild(a);a.click();a.remove();
@@ -867,7 +905,7 @@ function downloadCalendar(){
 }
 async function copyPlan(){
   if(!S.plan)return;
-  const text=itineraryText(S.plan),btn=$("#copyBtn"),old=btn.textContent;
+  const text=(S.days||[S.plan]).map(itineraryText).join("\n\n"),btn=$("#copyBtn"),old=btn.textContent;
   try{
     if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(text);
     else{

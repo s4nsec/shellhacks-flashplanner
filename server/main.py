@@ -320,6 +320,8 @@ async def parse(req: ParseRequest):
         "end_location": p.end_location or None,
         "loves": p.loves, "skips": p.skips, "must_see": p.must_see,
         "appointments": [a.model_dump() for a in p.appointments],
+        "days": max(1, min(7, p.days)),
+        "day_windows": [w.model_dump() for w in p.day_windows[:7]],
         "wheelchair_accessible": p.wheelchair_accessible,
         "dietary_preferences": [d for d in p.dietary_preferences if d in {"vegetarian", "vegan"}],
         "pace": p.pace if p.pace in planner.PACE else "normal",
@@ -360,10 +362,57 @@ async def resolve_start(http: httpx.AsyncClient, trip: dict, city: str) -> tuple
 
 @app.post("/api/plan")
 async def plan(req: TripRequest):
-    return StreamingResponse(plan_stream(req), media_type="application/x-ndjson")
+    stream = multi_day_plan_stream(req) if req.days > 1 else plan_stream(req)
+    return StreamingResponse(stream, media_type="application/x-ndjson")
 
 
-async def plan_stream(req: TripRequest, persist: bool = True):
+async def multi_day_plan_stream(req: TripRequest):
+    """Plan consecutive days independently while excluding prior stops and zones."""
+    plans, used_ids, used_zones = [], set(), set()
+    base_day = None
+    if req.date:
+        try:
+            base_day = Date.fromisoformat(req.date)
+        except ValueError:
+            pass
+    for index in range(req.days):
+        window = req.day_windows[index] if index < len(req.day_windows) else None
+        day_req = req.model_copy(update={
+            "date": (base_day + timedelta(days=index)).isoformat() if base_day else None,
+            "start_time": window.start_time if window else req.start_time,
+            "end_time": window.end_time if window else req.end_time,
+            "days": 1,
+            "day_windows": [],
+        })
+        day_plan = None
+        async for line in plan_stream(day_req, exclude_place_ids=used_ids, avoid_zones=used_zones):
+            event = json.loads(line)
+            if event.get("type") == "step":
+                event["key"] = f"day-{index + 1}-{event['key']}"
+                event["title"] = f"Day {index + 1}: {event['title']}"
+                yield ev(**event)
+            elif event.get("type") == "error":
+                yield line
+                return
+            elif event.get("type") == "plan":
+                day_plan = event
+        if not day_plan:
+            yield ev(type="error", message=f"Couldn't build day {index + 1}.")
+            return
+        if base_day is None:
+            base_day = Date.fromisoformat(day_plan["date"])
+        day_plan["day_number"] = index + 1
+        plans.append(day_plan)
+        stops = day_plan["completed"] + day_plan["stops"]
+        used_ids.update(stop["id"] for stop in stops)
+        used_zones.update(stop["zone"] for stop in stops if stop.get("zone"))
+    yield ev(type="plan", multi_day=True, days=plans,
+             story=f"Built {len(plans)} days without repeating places, spreading stops across neighborhoods.")
+
+
+async def plan_stream(req: TripRequest, persist: bool = True,
+                      exclude_place_ids: set[str] | None = None,
+                      avoid_zones: set[str] | None = None):
     msg = missing_keys_message()
     if msg:
         yield ev(type="error", message=msg)
@@ -436,9 +485,10 @@ async def plan_stream(req: TripRequest, persist: bool = True):
                             appointment_times[pid] = minute
                 else:
                     missing_names.append(name)
-            ids = list(found)[:MAX_CANDIDATES]
+            exclude_place_ids = exclude_place_ids or set()
+            ids = [pid for pid in found if pid not in exclude_place_ids][:MAX_CANDIDATES]
             for pid in flags:  # never drop named places
-                if pid not in ids:
+                if pid not in ids and pid not in exclude_place_ids:
                     ids.append(pid)
             for p in cafes[:planner.BREAK_CANDIDATES * 2]:  # options for the coffee break
                 found.setdefault(p["id"], p)
@@ -560,6 +610,10 @@ async def plan_stream(req: TripRequest, persist: bool = True):
                 c.windows, c.hours_known = places.opening_windows(c._raw, weekday)
                 closed += not c.windows
             planner.assign_zones(shortlist)
+            if avoid_zones:
+                for c in shortlist:
+                    if c.zone_name in avoid_zones and not (c.must or c.appointment_time is not None):
+                        c.score = max(0, c.score - 20)
             sunset = planner.sunset_minutes(hotel["lat"], hotel["lng"], day, utc_offset)
             zones = sorted({c.zone_name for c in shortlist})
             yield step_ok("hours", t0,

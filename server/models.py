@@ -14,6 +14,11 @@ class Appointment(BaseModel):
     time: str                            # 24-hour HH:MM
 
 
+class DayWindow(BaseModel):
+    start_time: str = "10:00"
+    end_time: str = "19:00"
+
+
 class StartPlace(BaseModel):
     """A place picked from the browser's autocomplete, so the server needn't look it up again."""
     place_id: str = ""
@@ -35,6 +40,8 @@ class TripRequest(BaseModel):
     skips: list[str] = Field(default_factory=list)
     must_see: list[str] = Field(default_factory=list)
     appointments: list[Appointment] = Field(default_factory=list)  # fixed-time stops
+    days: int = Field(1, ge=1, le=7)
+    day_windows: list[DayWindow] = Field(default_factory=list)
     wheelchair_accessible: bool = False
     dietary_preferences: list[Literal["vegetarian", "vegan"]] = Field(default_factory=list)
     pace: Literal["relaxed", "normal", "packed"] = "normal"

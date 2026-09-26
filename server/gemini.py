@@ -37,6 +37,11 @@ class ParsedAppointment(BaseModel):
     time: str              # HH:MM (24h)
 
 
+class ParsedDayWindow(BaseModel):
+    start_time: str
+    end_time: str
+
+
 class ParsedTrip(BaseModel):
     city: str
     date: str               # YYYY-MM-DD or ""
@@ -49,6 +54,8 @@ class ParsedTrip(BaseModel):
     skips: list[str]
     must_see: list[str]
     appointments: list[ParsedAppointment]
+    days: int
+    day_windows: list[ParsedDayWindow]
     wheelchair_accessible: bool
     dietary_preferences: list[str]  # vegetarian | vegan
     pace: str               # relaxed | normal | packed
@@ -124,6 +131,9 @@ Rules:
 - must_see: specific places they insist on.
 - appointments: fixed-time reservations, tickets, or events as place + 24-hour
   HH:MM time (for example, Joe Beef at 19:30). Do not put ordinary preferences here.
+- days: number of consecutive days requested, from 1 to 7 (default 1).
+- day_windows: one start_time/end_time object per day only when the traveler gives
+  different hours for individual days; otherwise [].
 - wheelchair_accessible: true when the traveler needs wheelchair-accessible places.
 - dietary_preferences: include "vegetarian" and/or "vegan" only when requested.
 - pace: "packed" if they want to see as much as possible, "relaxed" if they want it easy, else "normal".

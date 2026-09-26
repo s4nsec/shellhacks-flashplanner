@@ -26,6 +26,11 @@ Built for ShellHacks: the Waymo Mobility Challenge and Best Use of Gemini API.
 | Turn "it's pouring" into an action | Gemini function calling | `interpret_event()` |
 | Map | Maps JavaScript API | `web/index.html` |
 
+Trips can span up to seven consecutive days. Sightline avoids repeating places,
+steers later days toward neighborhoods not yet visited, and accepts a separate
+start and finish time for each day. Weather and opening hours are fetched for
+each date independently.
+
 API keys stay on the server. The browser only gets the Maps JavaScript key,
 which you restrict to your site's URLs.
 
@@ -79,7 +84,9 @@ You need Python 3.10 or newer.
   settings. The page only uses them to fill fields left blank.
 - `POST /api/plan` with the trip settings (plus `start_place` when "Start at"
   came from autocomplete, and optional `notes`): streams newline-delimited JSON,
-  one `step` event per stage, then a `plan` event (or an `error` event).
+  one `step` event per stage, then a `plan` event (or an `error` event). Set
+  `days` from 1 to 7 and optionally provide `day_windows` entries with
+  `start_time` and `end_time` for per-day schedules.
 - `POST /api/interpret` `{session_id, text}`: Gemini function call, returns
   `{reason, delay_minutes}`.
 - `POST /api/replan` `{session_id, event, delay_minutes, client_time, lat, lng}`
