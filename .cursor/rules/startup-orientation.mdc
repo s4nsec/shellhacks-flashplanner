@@ -1,0 +1,13 @@
+---
+description: Orient future agents to the Sightline project before making changes
+alwaysApply: true
+---
+
+# Startup Orientation
+
+- Treat `shellhacks-flashplanner/` as the real project repository. The parent `shellhacks/` directory may also be a Git repo, but app work belongs in this nested repo unless the user says otherwise.
+- At the start of a new conversation, run `pwd`, `git status --short --branch`, `git remote -v`, and `rg --files` from the project repo before editing.
+- Check the current branch and whether it is tracking a remote. If the user asks for PR work, create a `codex/` branch from the intended base and do not push unless they explicitly ask.
+- If the user mentions issues, PRs, or "pick up more issues", inspect the GitHub issue/PR context with `gh` when network access is available, then choose related work that can be reviewed together.
+- Preserve user or prior-agent changes. Do not reset, checkout, or delete work to clean the tree unless the user explicitly asks.
+- Use the existing FastAPI server in `server/`, the single-page UI in `web/index.html`, and focused `unittest` tests under `tests/` for low-level planner/place helper coverage.
