@@ -86,7 +86,7 @@ class MealPolicyTests(unittest.TestCase):
 
     def test_replan_after_lunch_only_offers_dinner(self):
         s = session([cand("a", "meal", 70, 60), cand("b", "meal", 65, 60)])
-        s.completed = [{"node": 1, "notes": ["lunch"], "leave": 900}]
+        s.completed = [{"node": 1, "notes": ["lunch"], "leave": 900, "leg": {"mode": "walk", "min": 10, "km": 1.0}}]
         s.now = 900
 
         route = planner.solve(s, s.now, 1, [2], time_limit_s=1)
@@ -176,7 +176,7 @@ class CoffeeBreakTests(unittest.TestCase):
         cands = [cand("beans", "snack", 50, 20), cand("brew", "snack", 45, 20), cand("tower")]
         s = session(cands, start=600, deadline=1080, meals=[])
         planner.mark_break_stops(s.cands, s.trip, s.start, s.deadline)
-        s.completed = [{"node": 1, "notes": ["break"], "leave": 800}]
+        s.completed = [{"node": 1, "notes": ["break"], "leave": 800, "leg": {"mode": "walk", "min": 10, "km": 1.0}}]
         s.now = 800
 
         route = planner.solve(s, s.now, 1, [2, 3], time_limit_s=1)

@@ -21,6 +21,7 @@ from . import rides
 
 PACE = {"relaxed": 1.25, "normal": 1.0, "packed": 0.8}
 WALK_CAP_KM = {"walk": (math.inf, 0.9), "transit": (1.3, 0.7), "ride": (1.0, 0.6)}  # (normal, tired)
+WALK_LIMIT_KM = {"relaxed": 4, "normal": 6, "packed": 10}  # most walking in a walk-only day
 RIDE_PICKUP_MIN = 4
 SWITCH_POINTS = 5            # cost of moving to another neighborhood
 TRAVEL_POINTS_PER_MIN = 0.03  # mild pressure against zigzagging
@@ -40,6 +41,7 @@ DINNER_POINTS = 1000         # skipping dinner costs more than all optional stop
 KIND_DEFAULT_MIN = {"museum": 90, "meal": 60, "snack": 20, "market": 50, "park": 60,
                     "viewpoint": 30, "shopping": 45, "nightlife": 90, "sight": 45, "other": 40}
 RAIN_FACTOR = {"outdoor": 0.25, "covered": 0.75, "indoor": 1.15}
+STRETCH_KINDS = {"park", "viewpoint", "sight", "shopping"}  # visits that may run long to fill a wait
 
 
 @dataclass
@@ -244,6 +246,21 @@ def visit_len(s: Session, node: int) -> int:
     return max(15, round(c.visit_min * PACE.get(s.trip.get("pace", "normal"), 1) / 5) * 5)
 
 
+def stretch(s: Session, st: dict, wait: int) -> int:
+    """Minutes to lengthen stop st by, so the traveler lingers there instead of waiting at a
+    later stop: up to double its visit length, never past closing, and not into forecast rain
+    for a place that rain spoils."""
+    c = s.cand(st["node"])
+    if c.kind not in STRETCH_KINDS or c.appointment_time is not None or c.break_stop:
+        return 0
+    close = next((cl for o, cl in c.windows if o <= st["begin"] < cl), st["leave"])
+    extra = min(wait, 2 * visit_len(s, st["node"]) - (st["leave"] - st["begin"]), close - st["leave"])
+    if RAIN_FACTOR.get(c.setting, 1) < 1:
+        rain = [h * 60 for h in s.rain_hours if h >= st["leave"] // 60]
+        extra = min(extra, min(rain, default=st["leave"] + extra) - st["leave"])
+    return max(0, extra)
+
+
 def clock_minutes(hhmm: str) -> int | None:
     try:
         hour, minute = hhmm.split(":")
@@ -281,6 +298,21 @@ def budget_left(s: Session) -> int | None:
     if s.trip.get("budget") is None:
         return None
     return s.trip["budget"] - sum(s.cand(x["node"]).cost for x in s.completed)
+
+
+def walk_left_m(s: Session) -> int | None:
+    """Metres of walking left in a walk-only day after the stops already done, or None
+    in other modes, where legs past the walk cap go by vehicle instead."""
+    if s.mode != "walk":
+        return None
+    done = sum(x["leg"]["km"] for x in s.completed if x["leg"]["mode"] == "walk")
+    return round((WALK_LIMIT_KM[s.trip.get("pace", "normal")] - done) * 1000)
+
+
+def walked_m(res: dict) -> int:
+    """Metres walked in a simulate() result, including the way to the trip's end."""
+    legs = [x["leg"] for x in res["stops"]] + [res["back"]]
+    return round(sum(L["km"] for L in legs if L["mode"] == "walk") * 1000)
 
 
 def appointment_meal(s: Session, c) -> str | None:
@@ -389,7 +421,43 @@ def add_position(s: Session, pt: tuple[float, float], walk: list, walk_m: list, 
 # ---------- schedule a fixed route ----------
 
 def simulate(s: Session, route: list, t0: int, start_node: int) -> dict | None:
-    t, loc, stops, had = t0, start_node, [], meals_had(s)
+    """The day's timeline for this route, or None if it doesn't fit. Each wait is then filled
+    where it can be: earlier stops stretch (nearest first), and what's left becomes a later
+    departure. A change is kept only if every stop in between just moves later, with the
+    same notes (no new rain, same meals)."""
+    res = timeline(s, route, t0, start_node, {}, 0)
+    if res is None:
+        return None
+    extra, depart = {}, 0
+    for i in range(len(res["stops"])):
+        wait = res["stops"][i]["wait"]
+        for j in range(i - 1, -1, -1):
+            if wait <= 0:
+                break
+            more = stretch(s, res["stops"][j], wait)
+            if more <= 0:
+                continue
+            trial = timeline(s, route, t0, start_node, {**extra, j: extra.get(j, 0) + more}, depart)
+            if not shifted(trial, res, more):
+                break
+            res, extra[j], wait = trial, extra.get(j, 0) + more, wait - more
+        if wait > 0:
+            trial = timeline(s, route, t0, start_node, extra, depart + wait)
+            if shifted(trial, res, wait):
+                res, depart = trial, depart + wait
+    return res
+
+
+def shifted(trial: dict | None, res: dict, filled: int) -> bool:
+    """Whether trial is res with filled fewer minutes of waiting and nothing else changed."""
+    return (trial is not None and trial["end"] == res["end"] and trial["waited"] == res["waited"] - filled
+            and [x["notes"] for x in trial["stops"]] == [x["notes"] for x in res["stops"]])
+
+
+def timeline(s: Session, route: list, t0: int, start_node: int, extra: dict, depart: int) -> dict | None:
+    """Visit each stop as early as it can start, leaving start_node depart minutes after t0
+    and staying extra[i] minutes longer than usual at the i-th stop."""
+    t, loc, stops, had = t0 + depart, start_node, [], meals_had(s)
     windows = meal_windows(s.trip)
     for node in route:
         L = leg(s, loc, node)
@@ -406,7 +474,7 @@ def simulate(s: Session, route: list, t0: int, start_node: int) -> dict | None:
             begin = next((max(arrive, lo) for lo, hi in starts if hi >= arrive), None)
         if begin is None:
             return None
-        leave = begin + visit_len(s, node)
+        leave = begin + visit_len(s, node) + extra.get(len(stops), 0)
         notes = []
         if c.appointment_time is not None:
             notes.append("appointment")
@@ -434,7 +502,7 @@ def simulate(s: Session, route: list, t0: int, start_node: int) -> dict | None:
     travel = sum(x["leg"]["min"] for x in stops) + back["min"]
     walk_km = sum(x["leg"]["km"] for x in stops if x["leg"]["mode"] == "walk")
     walk_km += back["km"] if back["mode"] == "walk" else 0
-    return {"stops": stops, "back": {**back, "from": loc}, "end": end, "travel": travel,
+    return {"stops": stops, "back": {**back, "from": loc}, "depart": t0 + depart, "end": end, "travel": travel,
             "walk_km": round(walk_km, 1), "see": sum(x["leave"] - x["begin"] for x in stops),
             "waited": sum(x["wait"] for x in stops)}
 
@@ -475,7 +543,8 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
     slot = [None, None] + [m for _, m, _ in entries]
     weather = [None, None] + [w for _, _, w in entries]
     n = len(nodes)
-    T = [[0 if i == j else leg(s, nodes[i], nodes[j])["min"] for j in range(n)] for i in range(n)]
+    L = [[leg(s, nodes[i], nodes[j]) if i != j else None for j in range(n)] for i in range(n)]
+    T = [[0 if i == j else L[i][j]["min"] for j in range(n)] for i in range(n)]
     visit = [0, 0] + [visit_len(s, k) for k, _, _ in entries]
     zone = [None, None] + [s.cand(k).zone for k, _, _ in entries]
     start_zone = s.cand(start_node).zone if 0 < start_node <= len(s.cands) else None
@@ -530,6 +599,14 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
         cost_idx = routing.RegisterUnaryTransitCallback(
             lambda i: s.cand(nodes[manager.IndexToNode(i)]).cost if manager.IndexToNode(i) >= 2 else 0)
         routing.AddDimension(cost_idx, 0, max(0, left), True, "Budget")
+
+    walk_left = walk_left_m(s)
+    if walk_left is not None:                                           # walking fits the day's limit
+        W = [[round(L[i][j]["km"] * 1000) if i != j and L[i][j]["mode"] == "walk" else 0
+              for j in range(n)] for i in range(n)]
+        walk_idx = routing.RegisterTransitCallback(
+            lambda i, j: W[manager.IndexToNode(i)][manager.IndexToNode(j)])
+        routing.AddDimension(walk_idx, 0, max(0, walk_left), True, "Walking")
 
     copies = {}
     for li in range(2, n):
@@ -587,11 +664,12 @@ def naive(s: Session, t0: int, start_node: int, cand_nodes: list) -> list:
     """Baseline: go down Google's 'top attractions' list in order, skipping what doesn't fit."""
     order = sorted((k for k in cand_nodes if s.cand(k).score >= 40),
                    key=lambda k: (s.cand(k).list_rank, -s.cand(k).score))
-    route, left = [], budget_left(s)
+    route, left, walk_left = [], budget_left(s), walk_left_m(s)
     for k in order:
         if left is not None and sum(s.cand(x).cost for x in route + [k]) > left:
             continue
-        if simulate(s, route + [k], t0, start_node):
+        res = simulate(s, route + [k], t0, start_node)
+        if res and (walk_left is None or walked_m(res) <= walk_left):
             route.append(k)
     return route
 
@@ -601,6 +679,13 @@ def cut_reasons(s: Session, cand_nodes: list, route: list, t0: int) -> list:
     zones = {s.cand(k).zone for k in in_plan}
     left = budget_left(s)
     spend = sum(s.cand(k).cost for k in route)
+    walk_left = walk_left_m(s)
+
+    def walk_m(a, b):
+        L = leg(s, a, b)
+        return L["km"] * 1000 if L["mode"] == "walk" else 0
+    path = list(zip([s.loc] + route, route + [s.end_node]))
+    walking = sum(walk_m(a, b) for a, b in path)
     out = []
     for k in cand_nodes:
         if k in in_plan:
@@ -618,6 +703,9 @@ def cut_reasons(s: Session, cand_nodes: list, route: list, t0: int) -> list:
             why = "Its hours don't fit your time window"
         elif left is not None and c.cost > left - spend:
             why = "Would go over your budget"
+        elif walk_left is not None and walking + min(
+                walk_m(a, k) + walk_m(k, b) - walk_m(a, b) for a, b in path) > walk_left:
+            why = f"Would go over your {WALK_LIMIT_KM[s.trip.get('pace', 'normal')]} km walking limit"
         elif c.kind == "snack" and any(s.cand(x).kind == "snack" for x in in_plan):
             why = "One snack stop is enough for the day"
         elif c.setting == "outdoor" and not allowed_starts(s, k, t0, weather="dry"):
