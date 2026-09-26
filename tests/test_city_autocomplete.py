@@ -2,7 +2,10 @@ from pathlib import Path
 import unittest
 
 
-PAGE = (Path(__file__).parents[1] / "web" / "index.html").read_text(encoding="utf-8")
+WEB = Path(__file__).parents[1] / "web"
+# The page markup plus its scripts, which live in web/assets/js.
+PAGE = "\n".join(p.read_text(encoding="utf-8")
+                 for p in [WEB / "index.html", *sorted((WEB / "assets" / "js").glob("*.js"))])
 
 
 class CityAutocompleteTests(unittest.TestCase):

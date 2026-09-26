@@ -1,0 +1,98 @@
+/* ============ map: Google Maps if a browser key is set, else a simple SVG ============ */
+function decodePolyline(str){
+  let i=0,lat=0,lng=0;const out=[];
+  while(i<str.length){
+    for(const k of [0,1]){let b,shift=0,res=0;do{b=str.charCodeAt(i++)-63;res|=(b&31)<<shift;shift+=5;}while(b>=32);
+      const d=(res&1)?~(res>>1):(res>>1);if(k===0)lat+=d;else lng+=d;}
+    out.push([lat/1e5,lng/1e5]);
+  }
+  return out;
+}
+function legPath(from,to,L){return L.polyline?decodePolyline(L.polyline):[[from.lat,from.lng],[to.lat,to.lng]];}
+function legsOf(p){
+  const legs=[];let prev=p.hotel;
+  p.completed.forEach(st=>{legs.push({path:legPath(prev,st,st.leg),mode:st.leg.mode,done:true});prev=st;});
+  if(p.here)prev=p.here;
+  p.stops.forEach(st=>{legs.push({path:legPath(prev,st,st.leg),mode:st.leg.mode,done:false});prev=st;});
+  legs.push({path:legPath(prev,p.end_location,p.back),mode:p.back.mode,done:false});
+  return legs;
+}
+const MapView={
+  kind:null,map:null,overlays:[],
+  async init(cfg){
+    if(cfg.mapsKey){
+      try{await loadGoogleMaps(cfg.mapsKey);this.kind="google";this.mapId=cfg.mapId;
+        $("#mapNote").textContent="Map data from Google";return;}catch(e){console.warn(e);}
+    }
+    this.kind="svg";
+    $("#gmap").innerHTML=`<svg id="svgmap" role="img" aria-label="Route sketch"></svg>`;
+    $("#mapNote").textContent=cfg.mapsKey?"Google map failed to load, showing a sketch.":"Add GOOGLE_MAPS_BROWSER_KEY for a real map.";
+  },
+  draw(p){
+    if(!this.kind){
+      this.kind="svg";
+      $("#gmap").innerHTML=`<svg id="svgmap" role="img" aria-label="Route sketch"></svg>`;
+    }
+    if(this.kind==="google")this.drawGoogle(p);
+    else{this.drawSvg(p);this.fit();}
+  },
+  // Keep the route in the part of the map the sheet doesn't cover.
+  fit(){
+    const cover=Sheet.cover();
+    if(this.kind==="google"&&this.map&&this.bounds)this.map.fitBounds(this.bounds,{top:72,left:32,right:32,bottom:cover+24});
+    else if(this.kind==="svg")$("#gmap").style.bottom=cover+"px";
+  },
+  pin(cls,text){const d=document.createElement("div");d.className="pin "+cls;d.textContent=text||"";return d;},
+  drawGoogle(p){
+    if(!this.map)this.map=new google.maps.Map($("#gmap"),{center:{lat:p.hotel.lat,lng:p.hotel.lng},zoom:13,mapId:this.mapId,disableDefaultUI:true,zoomControl:true,zoomControlOptions:{position:google.maps.ControlPosition.RIGHT_CENTER},fullscreenControl:false,gestureHandling:"greedy"});
+    this.overlays.forEach(o=>{o.setMap?o.setMap(null):(o.map=null);});this.overlays=[];
+    const {AdvancedMarkerElement}=google.maps.marker,bounds=new google.maps.LatLngBounds();
+    const col={walk:cssVar("--green"),transit:cssVar("--blue"),ride:cssVar("--violet")};
+    legsOf(p).forEach(l=>{
+      const path=l.path.map(([a,b])=>({lat:a,lng:b}));path.forEach(q=>bounds.extend(q));
+      const opts={map:this.map,path,strokeColor:col[l.mode],strokeOpacity:l.done?.35:.95,strokeWeight:5};
+      if(l.mode==="walk")Object.assign(opts,{strokeOpacity:0,icons:[{icon:{path:google.maps.SymbolPath.CIRCLE,fillColor:col.walk,fillOpacity:l.done?.35:1,strokeOpacity:0,scale:2.6},offset:"0",repeat:"10px"}]});
+      this.overlays.push(new google.maps.Polyline(opts));
+    });
+    const add=(pos,el,title,z)=>{this.overlays.push(new AdvancedMarkerElement({map:this.map,position:pos,content:el,title,zIndex:z}));bounds.extend(pos);};
+    p.others.forEach(o=>add({lat:o.lat,lng:o.lng},this.pin("other"),o.name,1));
+    add({lat:p.hotel.lat,lng:p.hotel.lng},this.pin("hotel","H"),p.hotel.name,5);
+    if(p.end_location.lat!==p.hotel.lat||p.end_location.lng!==p.hotel.lng)add({lat:p.end_location.lat,lng:p.end_location.lng},this.pin("hotel","E"),p.end_location.name,6);
+    let n=0;p.completed.concat(p.stops).forEach(st=>add({lat:st.lat,lng:st.lng},this.pin(st.done?"done":st.new?"new":"",st.done?"✓":String(++n)),st.name,10));
+    if(p.completed.length||p.shifted||p.here){const at=p.here||(p.completed.length?p.completed[p.completed.length-1]:p.hotel);add({lat:at.lat,lng:at.lng},this.pin("here"),"You are here",20);}
+    this.bounds=bounds;this.fit();
+  },
+  drawSvg(p){
+    const pts=[p.hotel,p.end_location,...(p.here?[p.here]:[]),...p.completed,...p.stops,...p.others].map(q=>[q.lat,q.lng]);
+    legsOf(p).forEach(l=>pts.push(...l.path));
+    let minLat=Math.min(...pts.map(q=>q[0])),maxLat=Math.max(...pts.map(q=>q[0])),minLng=Math.min(...pts.map(q=>q[1])),maxLng=Math.max(...pts.map(q=>q[1]));
+    const kx=Math.cos((minLat+maxLat)/2*Math.PI/180),padLat=(maxLat-minLat)*.08+.002,padLng=(maxLng-minLng)*.08+.002/kx;
+    minLat-=padLat;maxLat+=padLat;minLng-=padLng;maxLng+=padLng;
+    const W=800,H=Math.round(Math.min(1.2,Math.max(.6,(maxLat-minLat)/((maxLng-minLng)*kx)))*W);
+    const sx=W/((maxLng-minLng)*kx),sy=H/(maxLat-minLat),s=Math.min(sx,sy);
+    const P=(lat,lng)=>[((lng-minLng)*kx*s+(W-(maxLng-minLng)*kx*s)/2).toFixed(1),((maxLat-lat)*s+(H-(maxLat-minLat)*s)/2).toFixed(1)];
+    const col={walk:"var(--green)",transit:"var(--blue)",ride:"var(--violet)"};
+    let h=`<rect width="${W}" height="${H}" fill="var(--land)"/>`;
+    p.others.forEach(o=>{const [x,y]=P(o.lat,o.lng);h+=`<circle cx="${x}" cy="${y}" r="5" fill="var(--muted)" opacity=".5"><title>${esc(o.name)}</title></circle>`;});
+    legsOf(p).forEach(l=>{h+=`<polyline points="${l.path.map(q=>P(q[0],q[1]).join(",")).join(" ")}" fill="none" stroke="${col[l.mode]}" stroke-width="${l.mode==="walk"?5:4.5}" stroke-linecap="round" stroke-linejoin="round"${l.mode==="walk"?' stroke-dasharray="0.5 9"':""} opacity="${l.done?.3:.95}"/>`;});
+    {const [x,y]=P(p.hotel.lat,p.hotel.lng);h+=`<rect x="${x-12}" y="${y-12}" width="24" height="24" rx="5" fill="var(--ink)"/><text x="${x}" y="${+y+4.5}" text-anchor="middle" style="font:800 13px var(--sans);fill:var(--panel)">H</text>`;}
+    if(p.end_location.lat!==p.hotel.lat||p.end_location.lng!==p.hotel.lng){const [x,y]=P(p.end_location.lat,p.end_location.lng);h+=`<rect x="${x-12}" y="${y-12}" width="24" height="24" rx="5" fill="var(--ink)"/><text x="${x}" y="${+y+4.5}" text-anchor="middle" style="font:800 13px var(--sans);fill:var(--panel)">E</text>`;}
+    let n=0;p.completed.concat(p.stops).forEach(st=>{const [x,y]=P(st.lat,st.lng);
+      h+=`<g><title>${esc(st.name)}</title><circle cx="${x}" cy="${y}" r="13" fill="${st.done?"var(--muted)":"var(--panel)"}" stroke="${st.new?"var(--gold)":st.done?"var(--muted)":"var(--ink)"}" stroke-width="3.5"/><text x="${x}" y="${+y+4.5}" text-anchor="middle" style="font:800 12.5px var(--sans);fill:${st.done?"var(--panel)":"var(--ink)"}">${st.done?"✓":++n}</text></g>`;});
+    if(p.completed.length||p.shifted||p.here){const at=p.here||(p.completed.length?p.completed[p.completed.length-1]:p.hotel);const [x,y]=P(at.lat,at.lng);h+=`<circle cx="${+x+13}" cy="${y-13}" r="7" fill="var(--gold)" stroke="var(--panel)" stroke-width="2"/>`;}
+    const kmPx=s/111.2;h+=`<g transform="translate(24 ${H-24})"><rect y="-6" width="${kmPx.toFixed(1)}" height="6" fill="var(--ink)"/><text y="-12" style="font:600 13px var(--sans);fill:var(--muted)">1 km</text></g>`;
+    const svg=$("#svgmap");svg.setAttribute("viewBox",`0 0 ${W} ${H}`);svg.innerHTML=h;
+  }
+};
+function loadGoogleMaps(key){
+  return new Promise((resolve,reject)=>{
+    window.__flashPlannerMaps=()=>resolve();
+    window.gm_authFailure=()=>{MapView.kind="svg";$("#gmap").innerHTML=`<svg id="svgmap"></svg>`;
+      $("#mapNote").textContent="The Maps browser key was rejected. Check its API and referrer restrictions.";if(S.plan)MapView.draw(S.plan);};
+    const s=document.createElement("script");
+    s.src=`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async&libraries=marker,geometry&callback=__flashPlannerMaps`;
+    s.async=true;s.onerror=()=>reject(new Error("Maps JavaScript API failed to load"));
+    document.head.appendChild(s);
+  });
+}
+

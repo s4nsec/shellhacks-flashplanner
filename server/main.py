@@ -18,6 +18,7 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from . import config, gemini, places, planner, rides, routes, session_store, weather
 from .models import InterpretRequest, ParseRequest, ReplanRequest, TripRequest
@@ -27,6 +28,7 @@ log = logging.getLogger("flashplanner")
 
 app = FastAPI(title="FlashPlanner")
 WEB = Path(__file__).resolve().parent.parent / "web"
+app.mount("/assets", StaticFiles(directory=WEB / "assets"), name="assets")
 SESSIONS: dict[str, planner.Session] = {}   # in memory, one per planned day
 SESSION_TOUCHED: dict[str, float] = {}
 SESSION_TTL_SECONDS = 6 * 60 * 60
