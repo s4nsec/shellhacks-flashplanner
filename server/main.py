@@ -9,6 +9,7 @@ stage runs (for the agent trace), then one "plan" event, or an "error" event.
 """
 import asyncio
 import json
+import logging
 import time
 import uuid
 from datetime import date as Date, datetime, timedelta, timezone
@@ -20,6 +21,9 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from . import config, gemini, places, planner, routes
 from .models import InterpretRequest, ParseRequest, ReplanRequest, TripRequest
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("sightline")
 
 app = FastAPI(title="Sightline")
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -326,6 +330,11 @@ async def plan_stream(req: TripRequest):
             cands.sort(key=lambda c: (not c.must, -c.score))
             shortlist = cands[:max(SHORTLIST, sum(c.must for c in cands))]
             top = ", ".join(f"{c.name} {c.score}" for c in shortlist[:3])
+            log.info("Trip %s: loves=%s skips=%s must_see=%s", city, trip["loves"], trip["skips"], trip["must_see"])
+            short_ids = {c.id for c in shortlist}
+            log.info("Scored places (* = shortlisted for the solver):\n%s", "\n".join(
+                f"  {'*' if c.id in short_ids else ' '} {c.score:3d} {c.kind:<9} {c.name} | must={c.must} | {c.reason}"
+                for c in cands))
             yield step_ok("score", t0, f"Kept the best {len(shortlist)} for you. Top matches: {top}.")
 
             # --- reviews -> visit lengths
@@ -635,6 +644,18 @@ def _fallback_change(f):
     return " ".join(out) or "The plan still works as is."
 
 
+def _log_itinerary(s, res):
+    lines = [f"Itinerary {s.id} ({s.trip['city']} {s.date}, now {fmt(s.now)}, deadline {fmt(s.deadline)}):"]
+    for label, stops in (("done", s.completed), ("next", res["stops"])):
+        for st in stops:
+            c = s.cand(st["node"])
+            lines.append(f"  [{label}] {fmt(st['begin'])}-{fmt(st['leave'])} {c.name} | kind={c.kind} score={c.score} "
+                         f"must={c.must} zone={c.zone_name} notes={st['notes']} "
+                         f"leg={st['leg']['mode']} {st['leg']['min']}min | {c.reason}")
+    lines.append(f"  back at hotel {fmt(res['end'])}")
+    log.info("\n".join(lines))
+
+
 def _stop_json(s, st, done):
     c = s.cand(st["node"])
     L = dict(st["leg"])
@@ -657,6 +678,7 @@ def _payload(s, story, cuts):
         res = {"stops": [], "back": {**back, "from": s.loc}, "end": s.now + back["min"],
                "travel": back["min"], "walk_km": back["km"] if back["mode"] == "walk" else 0}
         s.route = []
+    _log_itinerary(s, res)
     back = dict(res["back"])
     back["polyline"] = s.polylines.get((back["from"], 0, back["mode"]))
     back.pop("from", None)
