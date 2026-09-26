@@ -35,6 +35,7 @@ class ParsedAppointment(BaseModel):
 class ParsedTrip(BaseModel):
     city: str
     date: str               # YYYY-MM-DD or ""
+    relative_day: str       # today | tomorrow | monday ... sunday, or ""
     start_time: str         # HH:MM (24h) or ""
     end_time: str           # HH:MM (24h) or ""
     start_location: str     # hotel/address or ""
@@ -100,7 +101,10 @@ Message:
 
 Rules:
 - city: the city they're visiting ("" if not said).
-- date: YYYY-MM-DD if they name a day ("tomorrow", "Saturday"), else "".
+- date: YYYY-MM-DD only if they give a calendar date ("October 3", "the 12th"), else "".
+- relative_day: if they name a day relative to now instead, one of "today", "tomorrow",
+  or a lowercase weekday ("saturday"); else "". "Tonight" is "today". Leave date "" then;
+  the server works out the date on the city's own clock.
 - start_time / end_time: 24-hour HH:MM for when they're free, else "".
   If they give a duration ("6 hours from 11am"), compute end_time.
   An appointment time is not a start or end time unless they explicitly say their day starts or ends then.
