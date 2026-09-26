@@ -32,9 +32,16 @@ class ParsedMeal(BaseModel):
     time: str               # preferred start, HH:MM (24h)
 
 
+
+class ParsedAppointment(BaseModel):
+    place: str
+    time: str              # HH:MM (24h)
+
+
 class ParsedTrip(BaseModel):
     city: str
     date: str               # YYYY-MM-DD or ""
+    relative_day: str       # today | tomorrow | monday ... sunday, or ""
     start_time: str         # HH:MM (24h) or ""
     end_time: str           # HH:MM (24h) or ""
     start_location: str     # hotel/address or ""
@@ -42,6 +49,7 @@ class ParsedTrip(BaseModel):
     loves: list[str]
     skips: list[str]
     must_see: list[str]
+    appointments: list[ParsedAppointment]
     pace: str               # relaxed | normal | packed
     getting_around: str     # walk | transit | ride
     by_neighborhood: bool
@@ -101,14 +109,20 @@ Message:
 
 Rules:
 - city: the city they're visiting ("" if not said).
-- date: YYYY-MM-DD if they name a day ("tomorrow", "Saturday"), else "".
+- date: YYYY-MM-DD only if they give a calendar date ("October 3", "the 12th"), else "".
+- relative_day: if they name a day relative to now instead, one of "today", "tomorrow",
+  or a lowercase weekday ("saturday"); else "". "Tonight" is "today". Leave date "" then;
+  the server works out the date on the city's own clock.
 - start_time / end_time: 24-hour HH:MM for when they're free, else "".
   If they give a duration ("6 hours from 11am"), compute end_time.
+  An appointment time is not a start or end time unless they explicitly say their day starts or ends then.
 - start_location: hotel, Airbnb, address or neighborhood they're staying in, else "".
 - end_location: where they need to finish (station, airport, hotel, address), else "".
 - loves: short interest phrases they like ("architecture", "street food", "jazz bars").
 - skips: things they want to avoid ("museums", "crowds").
 - must_see: specific places they insist on.
+- appointments: fixed-time reservations, tickets, or events as place + 24-hour
+  HH:MM time (for example, Joe Beef at 19:30). Do not put ordinary preferences here.
 - pace: "packed" if they want to see as much as possible, "relaxed" if they want it easy, else "normal".
 - getting_around: "walk" if walking only, "ride" if they mention taxis, rideshare or robotaxis, else "transit".
 - by_neighborhood: false only if they explicitly want maximum stops regardless of back-and-forth; otherwise true.
@@ -121,6 +135,8 @@ Rules:
 async def score_places(trip: dict, places: list[dict]) -> list[PlaceJudgment]:
     prompt = f"""You are planning one day of sightseeing for this traveler:
 {json.dumps(trip, ensure_ascii=False)}
+"notes" is optional free text for anything the other fields don't cover. If it
+contradicts another field (loves, skips, must_see, pace, ...), follow the field.
 
 Candidate places from Google Maps (id, name, types, rating, review count, summary):
 {json.dumps(places, ensure_ascii=False)}
@@ -128,7 +144,8 @@ Candidate places from Google Maps (id, name, types, rating, review count, summar
 For EVERY candidate return:
 - id: copied exactly.
 - score: 0-100, how worthwhile this place is for THIS traveler on a short visit.
-  Reward matches with "loves", penalize "skips" heavily, and give "must_see" places 95+.
+  Reward matches with "loves", give places that match "skips" under 20, and give "must_see" and
+  appointment places 95+.
   Give 0 to things that aren't worth a tourist's time (hotels, generic shops, offices,
   transit stations, duplicates of another candidate).
 - kind: one of sight, museum, meal, snack, market, park, viewpoint, shopping, nightlife, other.
@@ -140,7 +157,7 @@ For EVERY candidate return:
 
 async def estimate_visits(trip: dict, items: list[dict]) -> list[VisitEstimate]:
     """items: [{id, name, kind, reviews: [text, ...]}]"""
-    prompt = f"""Traveler: {json.dumps({k: trip.get(k) for k in ("loves", "skips", "pace")}, ensure_ascii=False)}
+    prompt = f"""Traveler: {json.dumps({k: trip.get(k) for k in ("loves", "skips", "pace", "notes")}, ensure_ascii=False)}
 
 For each place below, decide how many minutes this traveler should spend there
 (time on site only, not getting there).
@@ -164,8 +181,9 @@ async def narrate_plan(facts: dict) -> str:
     prompt = f"""Write a short, friendly summary (3 to 4 sentences, plain text, no lists,
 no markdown) of this day plan for the traveler. Mention how many stops, the
 neighborhood blocks if there are several, when meals and any coffee break happen, any golden-hour
-stop before sunset, one notable place that was left out and why, and when and
-where they finish. Use only facts from this JSON; don't invent anything.
+stop before sunset, when rain is expected if rain_forecast is set, one notable
+place that was left out and why, and when and where they finish. Use only facts
+from this JSON; don't invent anything.
 
 {json.dumps(facts, ensure_ascii=False)}"""
     return await _text(prompt)

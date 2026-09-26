@@ -9,6 +9,7 @@ stage runs (for the agent trace), then one "plan" event, or an "error" event.
 """
 import asyncio
 import json
+import logging
 import time
 import uuid
 from datetime import date as Date, datetime, timedelta, timezone
@@ -18,8 +19,11 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 
-from . import config, gemini, places, planner, routes
+from . import config, gemini, places, planner, routes, weather
 from .models import InterpretRequest, ParseRequest, ReplanRequest, TripRequest
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("sightline")
 
 app = FastAPI(title="Sightline")
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -201,22 +205,65 @@ def _demo_stop(name, lat, lng, arrive, begin, leave, zone, kind, setting, reason
 
 # ---------- 1. understand the message ----------
 
+WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+
+def resolve_relative_day(relative: str, today: Date) -> Date | None:
+    """Resolve "today", "tomorrow" or a weekday name against `today` (the city's date).
+
+    A weekday means the next one on or after today.
+    """
+    relative = (relative or "").strip().lower()
+    if relative == "today":
+        return today
+    if relative == "tomorrow":
+        return today + timedelta(days=1)
+    if relative in WEEKDAYS:
+        return today + timedelta(days=(WEEKDAYS.index(relative) - today.weekday()) % 7)
+    return None
+
+
+def local_date(utc_offset_minutes: int, now_utc: datetime | None = None) -> Date:
+    now_utc = now_utc or datetime.now(timezone.utc)
+    return (now_utc + timedelta(minutes=utc_offset_minutes)).date()
+
+
+async def city_today(city: str, start_location: str = "") -> Date:
+    """Today's date where the traveler is going. Falls back to the UTC date."""
+    if config.MAPS_KEY and city:
+        query = f"{start_location}, {city}" if start_location else city
+        try:
+            async with httpx.AsyncClient(timeout=10) as http:
+                hits = await places.search_text(http, query, 1)
+            if hits and "utcOffsetMinutes" in hits[0]:
+                return local_date(hits[0]["utcOffsetMinutes"])
+        except Exception:  # noqa: BLE001  (use UTC rather than fail the parse)
+            pass
+    return local_date(0)
+
+
 @app.post("/api/parse")
 async def parse(req: ParseRequest):
     if not config.GEMINI_API_KEY:
         raise HTTPException(400, "Add GEMINI_API_KEY to the .env file, then restart the server.")
     try:
-        p = await gemini.parse_trip(req.message, Date.today().isoformat())
+        p = await gemini.parse_trip(req.message, local_date(0).isoformat())
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Gemini couldn't read the message: {e}")
+    date = p.date or None
+    if p.relative_day:
+        day = resolve_relative_day(
+            p.relative_day, await city_today(req.city or p.city, p.start_location))
+        date = day.isoformat() if day else date
     return {
         "city": p.city,
-        "date": p.date or None,
+        "date": date,
         "start_time": p.start_time or None,
         "end_time": p.end_time or None,
         "start_location": p.start_location or None,
         "end_location": p.end_location or None,
         "loves": p.loves, "skips": p.skips, "must_see": p.must_see,
+        "appointments": [a.model_dump() for a in p.appointments],
         "pace": p.pace if p.pace in planner.PACE else "normal",
         "getting_around": p.getting_around if p.getting_around in MODE_API else "transit",
         "by_neighborhood": p.by_neighborhood,
@@ -227,6 +274,31 @@ async def parse(req: ParseRequest):
 
 
 # ---------- 2. plan the day ----------
+
+async def resolve_start(http: httpx.AsyncClient, trip: dict, city: str) -> tuple[dict, int] | str:
+    """The starting point and the city's UTC offset, or an error message.
+
+    A place picked from autocomplete already has coordinates, so it isn't looked
+    up again. Only its UTC offset may be missing, and that comes from the city.
+    """
+    picked = trip.get("start_place")
+    if picked:
+        hotel = {"name": picked["name"], "lat": picked["lat"], "lng": picked["lng"]}
+        if picked.get("utc_offset_minutes") is not None:
+            return hotel, picked["utc_offset_minutes"]
+        hits = await places.search_text(http, city, 1, (hotel["lat"], hotel["lng"]))
+        if not hits or "utcOffsetMinutes" not in hits[0]:
+            log.warning("No UTC offset for %s; using UTC", city)
+        return hotel, (hits[0].get("utcOffsetMinutes", 0) if hits else 0)
+    start_q = f"{trip['start_location']}, {city}" if trip.get("start_location") else city
+    hits = await places.search_text(http, start_q, 1)
+    if not hits:
+        return f"Google Maps couldn't find “{start_q}”. Try a hotel name or street address."
+    sp = hits[0]
+    hotel = {"name": places.display_name(sp), "lat": sp["location"]["latitude"],
+             "lng": sp["location"]["longitude"]}
+    return hotel, sp.get("utcOffsetMinutes", 0)
+
 
 @app.post("/api/plan")
 async def plan(req: TripRequest):
@@ -247,19 +319,15 @@ async def plan_stream(req: TripRequest):
     try:
         async with httpx.AsyncClient(timeout=40) as http:
             # --- find the starting point and candidate places
-            start_q = f"{trip['start_location']}, {city}" if trip.get("start_location") else city
             yield step_run("find", "Find places worth seeing",
                            f'places.searchText("top tourist attractions in {city}")',
                            "server/places.py: search_text()")
             t0 = time.perf_counter()
-            start_hits = await places.search_text(http, start_q, 1)
-            if not start_hits:
-                yield ev(type="error", message=f"Google Maps couldn't find “{start_q}”. Try a hotel name or street address.")
+            start = await resolve_start(http, trip, city)
+            if isinstance(start, str):
+                yield ev(type="error", message=start)
                 return
-            sp = start_hits[0]
-            hotel = {"name": places.display_name(sp), "lat": sp["location"]["latitude"],
-                     "lng": sp["location"]["longitude"]}
-            utc_offset = sp.get("utcOffsetMinutes", 0)
+            hotel, utc_offset = start
             bias = (hotel["lat"], hotel["lng"])
 
             end_location = hotel
@@ -278,16 +346,19 @@ async def plan_stream(req: TripRequest):
             using_list = bool(trip["user_list"])
             queries = [] if using_list else (
                 [f"top tourist attractions in {city}"] + [f"best {x} in {city}" for x in trip["loves"][:3]])
-            named = [(n, "must") for n in trip["must_see"]] + [(n, "list") for n in trip["user_list"]]
+            named = ([(n, "must", None) for n in trip["must_see"]]
+                     + [(n, "list", None) for n in trip["user_list"]]
+                     + [(a["place"], "appointment", a["time"]) for a in trip["appointments"]])
             cafe_query = [f"best coffee shops in {city}"] if wants_break and not using_list else []
             results = await asyncio.gather(
                 *(places.search_text(http, q, 20, bias) for q in queries),
-                *(places.search_text(http, f"{n}, {city}", 1, bias) for n, _ in named),
+                *(places.search_text(http, f"{n}, {city}", 1, bias) for n, _, _ in named),
                 *(places.search_text(http, q, 10, bias) for q in cafe_query))
             cafes = [p for res in results[len(queries) + len(named):] for p in res if places.is_visitable(p)]
             results = results[:len(queries) + len(named)]
             found: dict[str, dict] = {}
             flags: dict[str, set] = {}
+            appointment_times: dict[str, int] = {}
             rank: dict[str, int] = {}
             for qi, res in enumerate(results[:len(queries)]):
                 for i, p in enumerate(res):
@@ -296,10 +367,15 @@ async def plan_stream(req: TripRequest):
                     if places.is_visitable(p):
                         found.setdefault(p["id"], p)
             missing_names = []
-            for (name, kind), res in zip(named, results[len(queries):]):
+            for (name, kind, appointment_time), res in zip(named, results[len(queries):]):
                 if res:
-                    found.setdefault(res[0]["id"], res[0])
-                    flags.setdefault(res[0]["id"], set()).add(kind)
+                    pid = res[0]["id"]
+                    found.setdefault(pid, res[0])
+                    flags.setdefault(pid, set()).add(kind)
+                    if appointment_time is not None:
+                        minute = to_min(appointment_time, -1)
+                        if minute >= 0:
+                            appointment_times[pid] = minute
                 else:
                     missing_names.append(name)
             ids = list(found)[:MAX_CANDIDATES]
@@ -328,9 +404,10 @@ async def plan_stream(req: TripRequest):
             brief = [{"id": p["id"], "name": places.display_name(p), "types": p.get("types", [])[:4],
                       "rating": p.get("rating"), "reviews": p.get("userRatingCount", 0),
                       "summary": p.get("editorialSummary", {}).get("text", ""),
-                      "must_see": "must" in flags.get(p["id"], set())} for p in raw]
+                      "must_see": "must" in flags.get(p["id"], set()),
+                      "appointment": "appointment" in flags.get(p["id"], set())} for p in raw]
             judged = {j.id: j for j in await gemini.score_places(
-                {k: trip[k] for k in ("city", "loves", "skips", "must_see", "pace")}, brief)}
+                {k: trip[k] for k in ("city", "loves", "skips", "must_see", "appointments", "pace", "notes")}, brief)}
             cands = []
             for p in raw:
                 j = judged.get(p["id"])
@@ -344,18 +421,25 @@ async def plan_stream(req: TripRequest):
                     score=max(0, min(100, j.score)) if j else 30,
                     kind=j.kind if j and j.kind in planner.KIND_DEFAULT_MIN else "sight",
                     setting=j.setting if j and j.setting in planner.RAIN_FACTOR else "indoor",
-                    reason=j.reason if j else "", must=must)
+                    reason=j.reason if j else "", must=must,
+                    appointment_time=appointment_times.get(p["id"]))
                 c.visit_min = planner.KIND_DEFAULT_MIN[c.kind]
                 c._raw = p
-                if c.score > 0 or must or using_list:
+                if c.score > 0 or must or c.appointment_time is not None or using_list:
                     cands.append(c)
-            cands.sort(key=lambda c: (not c.must, -c.score))
-            shortlist = cands[:max(SHORTLIST, sum(c.must for c in cands))]
+            cands.sort(key=lambda c: (not (c.must or c.appointment_time is not None), -c.score))
+            required = sum(c.must or c.appointment_time is not None for c in cands)
+            shortlist = cands[:max(SHORTLIST, required)]
             if wants_break:  # keep a few cafés in play for the coffee break
                 have = sum(c.kind == "snack" and not c.must for c in shortlist)
                 shortlist += [c for c in cands[len(shortlist):]
                               if c.kind == "snack" and not c.must][:max(0, planner.BREAK_CANDIDATES - have)]
             top = ", ".join(f"{c.name} {c.score}" for c in shortlist[:3])
+            log.info("Trip %s: loves=%s skips=%s must_see=%s", city, trip["loves"], trip["skips"], trip["must_see"])
+            short_ids = {c.id for c in shortlist}
+            log.info("Scored places (* = shortlisted for the solver):\n%s", "\n".join(
+                f"  {'*' if c.id in short_ids else ' '} {c.score:3d} {c.kind:<9} {c.name} | must={c.must} | {c.reason}"
+                for c in cands))
             yield step_ok("score", t0, f"Kept the best {len(shortlist)} for you. Top matches: {top}.")
 
             # --- reviews -> visit lengths
@@ -416,11 +500,38 @@ async def plan_stream(req: TripRequest):
                           f"{closed} closed on {day.strftime('%A')}. {len(zones)} neighborhoods. "
                           f"Sunset around {fmt(sunset) if sunset else 'n/a'}.")
 
-            # --- travel times
+            # --- hourly forecast
             start_min = to_min(trip["start_time"], 600)
             deadline = to_min(trip["end_time"], 1140)
             if deadline <= start_min:
                 deadline = min(1439, start_min + 60)
+            yield step_run("weather", "Check the hourly forecast",
+                           f"weather.forecast.hours.lookup(hotel location, through {day.isoformat()})",
+                           "server/weather.py: hourly()")
+            t0 = time.perf_counter()
+            wx_error = None
+            try:
+                forecast = await weather.hourly(http, hotel["lat"], hotel["lng"], day, utc_offset)
+            except (httpx.HTTPError, KeyError, ValueError) as e:
+                log.warning("Weather forecast unavailable: %s", e)
+                forecast, wx_error = [], e
+            rain_hours = weather.rain_hours(forecast)
+            rain = _rain_windows(rain_hours, start_min, deadline)
+            if wx_error is not None:
+                wx_txt = ("Couldn't get the forecast (check that the Weather API is enabled for the "
+                          "Maps key), so the plan assumes it stays dry.")
+            elif not forecast:
+                wx_txt = ("No forecast for that date (it covers the next 10 days), "
+                          "so the plan assumes it stays dry.")
+            elif rain:
+                wx_txt = f"Rain likely {_windows_text(rain)}. Outdoor stops go to the dry hours."
+            else:
+                wx_txt = f"No rain expected between {fmt(start_min)} and {fmt(deadline)}."
+            wx_detail = "\n".join(f"{fmt(x['hour'] * 60):>8}  {x['prob']:3d}%  {x['mm']:.1f} mm"
+                                   for x in forecast if start_min // 60 <= x["hour"] <= deadline // 60)
+            yield step_ok("weather", t0, wx_txt, wx_detail or None)
+
+            # --- travel times
             pts = [(hotel["lat"], hotel["lng"])] + [(c.lat, c.lng) for c in shortlist]
             end_node = 0
             if trip.get("end_location"):
@@ -450,7 +561,8 @@ async def plan_stream(req: TripRequest):
                 utc_offset=utc_offset, sunset=sunset, hotel=hotel,
                 end_location=end_location, end_node=end_node, cands=shortlist,
                 walk=walk, walk_m=walk_m, transit=transit, drive=drive,
-                start=start_min, deadline=deadline, now=start_min, loc=0)
+                start=start_min, deadline=deadline, now=start_min, loc=0,
+                forecast=forecast, rain_hours=rain_hours)
             for c in shortlist:
                 del c._raw
 
@@ -462,7 +574,8 @@ async def plan_stream(req: TripRequest):
             t0 = time.perf_counter()
             nodes = list(range(1, len(shortlist) + 1))
             s.route = await asyncio.to_thread(planner.solve, s, s.now, 0, nodes)
-            s.initial_route = list(s.route)
+            s.initial_route, s.initial_meal_slot = list(s.route), dict(s.meal_slot)
+            s.initial_weather_slot = dict(s.weather_slot)
             base = planner.naive(s, s.now, 0, nodes)
             res = planner.simulate(s, s.route, s.now, 0)
             nres = planner.simulate(s, base, s.now, 0)
@@ -523,11 +636,32 @@ async def replan_stream(req: ReplanRequest):
                      if k not in {x["node"] for x in s.completed} and k not in s.skipped]
             if req.event == "reset":
                 s.completed, s.skipped, s.now, s.loc = [], set(), s.start, 0
-                s.raining = s.tired = False
+                s.tired = False
+                s.rain_hours = weather.rain_hours(s.forecast)
                 s.route, s.changed, s.dropped = list(s.initial_route), set(), []
+                s.locked = set()
+                s.meal_slot = dict(s.initial_meal_slot)
+                s.weather_slot = dict(s.initial_weather_slot)
                 all_nodes = list(range(1, len(s.cands) + 1))
                 cuts = planner.cut_reasons(s, all_nodes, s.route, s.now)
                 yield ev(type="plan", **_payload(s, "Back to the start of the day. " + await _story(s, cuts), cuts))
+                return
+            node = next((k for k, c in enumerate(s.cands, 1) if c.id == req.place_id), None)
+            if req.event in ("include", "lock", "unlock") and node is None:
+                yield ev(type="error", message="That place isn't part of this plan.")
+                return
+            if req.event in ("lock", "unlock"):
+                name = s.cand(node).name
+                if req.event == "lock":
+                    s.locked.add(node)
+                    story = f"Locked {name}. It will stay in the plan through later changes."
+                else:
+                    s.locked.discard(node)
+                    story = f"Unlocked {name}. A later re-plan may drop it if something else fits better."
+                s.changed, s.dropped = set(), []
+                yield ev(type="step", key=req.event, status="ok", title="Nothing to re-plan",
+                         result=story, fresh=True)
+                yield ev(type="plan", **_payload(s, story, planner.cut_reasons(s, nodes, s.route, s.now)))
                 return
             if req.event == "done":
                 res = planner.simulate(s, s.route, s.now, s.loc)
@@ -558,12 +692,17 @@ async def replan_stream(req: ReplanRequest):
             if req.event == "late":
                 s.now += max(1, req.delay_minutes)
             elif req.event == "rain":
-                s.raining = True
+                s.rain_hours |= set(range(s.now // 60, 24))  # it's raining now; assume it keeps up
             elif req.event == "tired":
                 s.tired = True
             elif req.event == "skip" and prev_next:
                 s.skipped.add(prev_next)
                 nodes = [k for k in nodes if k != prev_next]
+            elif req.event == "include":
+                s.locked.add(node)
+                s.skipped.discard(node)
+                if node not in nodes:
+                    nodes.append(node)
             else:
                 yield ev(type="error", message=f"Unknown event: {req.event}")
                 return
@@ -574,6 +713,10 @@ async def replan_stream(req: ReplanRequest):
             t0 = time.perf_counter()
             s.route = await asyncio.to_thread(planner.solve, s, s.now, s.loc, nodes)
             s.changed = set(s.route) - set(prev)
+            could_not_fit = None
+            if req.event == "include" and node not in s.route:
+                s.locked.discard(node)  # forcing couldn't make it fit, so don't leave it locked
+                could_not_fit = s.cand(node).name
             s.dropped = [s.cand(k).name for k in prev
                          if k not in s.route and not (req.event == "skip" and k == prev_next)]
             yield step_ok("resolve", t0, f"{len(s.route)} stops still fit. Travel times came from the cached matrix.",
@@ -590,6 +733,8 @@ async def replan_stream(req: ReplanRequest):
             facts = {"event": req.event, "time_now": fmt(s.now),
                      "dropped": s.dropped, "added": [s.cand(k).name for k in s.changed],
                      "skipped": s.cand(prev_next).name if req.event == "skip" and prev_next else None,
+                     "put_back": s.cand(node).name if req.event == "include" and not could_not_fit else None,
+                     "could_not_fit": could_not_fit,
                      "next": (s.cand(res["stops"][0]["node"]).name + " at " + fmt(res["stops"][0]["arrive"]))
                      if res and res["stops"] else None,
                      "finish_by": fmt(res["end"]) if res else None,
@@ -610,6 +755,15 @@ def _stats(res):
     if not res:
         return None
     return {"stops": len(res["stops"]), "see": res["see"], "travel": res["travel"], "waited": res["waited"]}
+
+
+def _rain_windows(rain_hours, start, end):
+    """Rainy spells clipped to the trip window, as [from, to] minutes."""
+    return [[max(a, start), min(b, end)] for a, b in planner.spells(rain_hours) if b > start and a < end]
+
+
+def _windows_text(windows):
+    return ", ".join(f"{fmt(a)} to {fmt(b)}" for a, b in windows)
 
 
 def _blocks(s, stops):
@@ -649,9 +803,10 @@ async def _story(s, cuts):
                    "neighborhood": s.cand(x["node"]).zone_name, "notes": x["notes"]} for x in res["stops"]],
         "neighborhood_blocks": [b["zone"] for b in _blocks(s, res["stops"])] if s.blocks else [],
         "walking_km": res["walk_km"], "sunset": fmt(s.sunset) if s.sunset else None,
+        "rain_forecast": _windows_text(_rain_windows(s.rain_hours, s.start, s.deadline)) or None,
         "left_out": cuts[:2],
         "finish": {"name": s.end_location["name"], "at": fmt(res["end"])},
-        "traveler": {k: s.trip.get(k) for k in ("loves", "skips", "pace")},
+        "traveler": {k: s.trip.get(k) for k in ("loves", "skips", "pace", "notes")},
     }
     try:
         return await gemini.narrate_plan(facts)
@@ -663,15 +818,32 @@ async def _story(s, cuts):
 
 def _fallback_change(f):
     out = []
+    if f.get("could_not_fit"):
+        out.append(f"Couldn't fit {f['could_not_fit']} back in, even after moving things around.")
+    if f.get("put_back"):
+        out.append(f"Put {f['put_back']} back in the plan.")
     if f["dropped"]:
         out.append(f"Dropped {', '.join(f['dropped'])}.")
-    if f["added"]:
-        out.append(f"Added {', '.join(f['added'])}.")
+    added = [x for x in f["added"] if x != f.get("put_back")]
+    if added:
+        out.append(f"Added {', '.join(added)}.")
     if f["next"]:
         out.append(f"Next up: {f['next']}.")
     if f["finish_by"]:
         out.append(f"Finish at {f['finish_at']} by {f['finish_by']}.")
     return " ".join(out) or "The plan still works as is."
+
+
+def _log_itinerary(s, res):
+    lines = [f"Itinerary {s.id} ({s.trip['city']} {s.date}, now {fmt(s.now)}, deadline {fmt(s.deadline)}):"]
+    for label, stops in (("done", s.completed), ("next", res["stops"])):
+        for st in stops:
+            c = s.cand(st["node"])
+            lines.append(f"  [{label}] {fmt(st['begin'])}-{fmt(st['leave'])} {c.name} | kind={c.kind} score={c.score} "
+                         f"must={c.must} zone={c.zone_name} notes={st['notes']} "
+                         f"leg={st['leg']['mode']} {st['leg']['min']}min | {c.reason}")
+    lines.append(f"  at {s.end_location['name']} by {fmt(res['end'])}")
+    log.info("\n".join(lines))
 
 
 def _stop_json(s, st, done):
@@ -686,6 +858,8 @@ def _stop_json(s, st, done):
             "zone": c.zone_name, "kind": c.kind, "setting": c.setting, "reason": c.reason,
             "rating": c.rating, "count": c.count, "maps_uri": c.maps_uri,
             "hours_known": c.hours_known,
+            "locked": c.must or c.appointment_time is not None or st["node"] in s.locked, "must": c.must,
+            "fixed": c.appointment_time is not None,
             "opens": c.windows[0][0] if c.windows else None}
 
 
@@ -696,6 +870,7 @@ def _payload(s, story, cuts):
         res = {"stops": [], "back": {**back, "from": s.loc}, "end": s.now + back["min"],
                "travel": back["min"], "walk_km": back["km"] if back["mode"] == "walk" else 0}
         s.route = []
+    _log_itinerary(s, res)
     back = dict(res["back"])
     back["polyline"] = s.polylines.get((back["from"], s.end_node, back["mode"]))
     back.pop("from", None)
@@ -709,6 +884,7 @@ def _payload(s, story, cuts):
         "session_id": s.id, "city": s.trip["city"], "date": s.date,
         "start": s.start, "deadline": s.deadline, "now": s.now, "sunset": s.sunset,
         "raining": s.raining, "tired": s.tired, "trip": s.trip,
+        "forecast": bool(s.forecast), "rain": _rain_windows(s.rain_hours, s.start, s.deadline),
         "hotel": s.hotel, "end_location": s.end_location,
         "at": s.hotel["name"] if s.loc == 0 else s.cand(s.loc).name,
         "shifted": bool(s.completed and s.now != s.completed[-1]["leave"]) or (not s.completed and s.now != s.start),

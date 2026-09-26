@@ -44,19 +44,24 @@ class MealPolicyTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             TripRequest(city="Lisbon", meals=[{"name": "lunch", "time": "noon"}])
 
-    def test_meal_slots_are_centered_on_requested_times(self):
-        slots = planner.meal_slots({"meals": [{"name": "Breakfast", "time": "08:00"},
-                                              {"name": "dinner", "time": "20:15"}]})
+    def test_meal_windows_follow_requested_times_in_day_order(self):
+        windows = planner.meal_windows({"meals": [{"name": "dinner", "time": "20:15"},
+                                                  {"name": "Breakfast", "time": "08:00"}]})
 
-        self.assertEqual(slots, [("breakfast", (405, 555)), ("dinner", (1140, 1290))])
+        self.assertEqual(list(windows.items()), [("breakfast", (420, 600)), ("dinner", (1155, 1335))])
 
-    def test_meal_slots_skip_invalid_and_duplicate_meals(self):
-        slots = planner.meal_slots({"meals": [{"name": "lunch", "time": "12:00"},
-                                              {"name": "lunch", "time": "13:00"},
-                                              {"name": "brunch", "time": "11:00"},
-                                              {"name": "dinner", "time": "25:00"}]})
+    def test_default_meal_windows_are_lunch_and_dinner(self):
+        self.assertEqual(planner.meal_windows({}), {"lunch": planner.LUNCH, "dinner": planner.DINNER})
+        self.assertEqual(planner.meal_windows({"meals": DEFAULT_MEALS}), planner.meal_windows({}))
+        self.assertEqual(planner.meal_windows({"meals": []}), {})
 
-        self.assertEqual([name for name, _ in slots], ["lunch"])
+    def test_meal_windows_skip_invalid_and_duplicate_meals(self):
+        windows = planner.meal_windows({"meals": [{"name": "lunch", "time": "12:00"},
+                                                  {"name": "lunch", "time": "13:00"},
+                                                  {"name": "brunch", "time": "11:00"},
+                                                  {"name": "dinner", "time": "25:00"}]})
+
+        self.assertEqual(windows, {"lunch": (660, 840)})
 
     def test_no_meals_means_restaurants_never_fit(self):
         s = session([cand("bistro", "meal")], meals=[])
@@ -97,7 +102,7 @@ class MealPolicyTests(unittest.TestCase):
 
         stop = res["stops"][0]
         self.assertEqual(stop["notes"], ["breakfast"])
-        self.assertTrue(405 <= stop["begin"] <= 555)
+        self.assertTrue(420 <= stop["begin"] <= 600)
 
     def test_no_meals_plans_only_sights(self):
         s = session([cand("bistro", "meal", 90, 60), cand("tower", "sight", 60)], meals=[])
@@ -160,14 +165,27 @@ class CoffeeBreakTests(unittest.TestCase):
         self.assertFalse(any(c.break_stop for c in s.cands))
         self.assertFalse(any("break" in st["notes"] for st in res["stops"]))
 
-    def test_second_break_is_not_offered_after_one_is_done(self):
-        cands = [cand("beans", "snack", 50, 20), cand("brew", "snack", 45, 20)]
+    def test_second_break_is_not_planned_after_one_is_done(self):
+        cands = [cand("beans", "snack", 50, 20), cand("brew", "snack", 45, 20), cand("tower")]
         s = session(cands, start=600, deadline=1080, meals=[])
         planner.mark_break_stops(s.cands, s.trip, s.start, s.deadline)
-        s.completed = [{"node": 1}]
+        s.completed = [{"node": 1, "notes": ["break"], "leave": 800}]
+        s.now = 800
 
-        self.assertEqual(planner.allowed_starts(s, 2, 800), [])
-        self.assertNotEqual(planner.allowed_starts(s, 1, 780), [])
+        route = planner.solve(s, s.now, 1, [2, 3], time_limit_s=1)
+
+        self.assertEqual(route, [3])
+
+    def test_meal_reservation_counts_as_nearest_requested_meal(self):
+        c = cand("joe", "meal", 80, 60)
+        c.appointment_time = 480
+        s = session([c], start=420, deadline=720, meals=[{"name": "breakfast", "time": "08:30"},
+                                                          {"name": "lunch", "time": "12:30"}])
+
+        route, res = solve(s)
+
+        self.assertEqual(res["stops"][0]["begin"], 480)
+        self.assertIn("breakfast", res["stops"][0]["notes"])
 
 
 if __name__ == "__main__":
