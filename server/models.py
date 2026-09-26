@@ -1,12 +1,11 @@
 """Request bodies for the HTTP API."""
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
-class AppointmentRequest(BaseModel):
+class Appointment(BaseModel):
     place: str
-    time: str                              # 24-hour HH:MM
-    duration_minutes: int = 60
+    time: str                            # 24-hour HH:MM
 
 
 class TripRequest(BaseModel):
@@ -15,13 +14,13 @@ class TripRequest(BaseModel):
     start_time: str = "10:00"             # 24-hour HH:MM
     end_time: str = "19:00"
     start_location: Optional[str] = None  # hotel name or address; defaults to the city center
-    end_location: Optional[str] = None    # train station, airport, venue; defaults to start_location
+    end_location: Optional[str] = None    # station, airport, hotel, etc.; defaults to start_location
     loves: list[str] = Field(default_factory=list)
     skips: list[str] = Field(default_factory=list)
     must_see: list[str] = Field(default_factory=list)
-    appointments: list[AppointmentRequest] = Field(default_factory=list)
-    pace: str = "normal"                  # relaxed | normal | packed
-    getting_around: str = "transit"       # walk | transit | ride
+    appointments: list[Appointment] = Field(default_factory=list)  # fixed-time stops
+    pace: Literal["relaxed", "normal", "packed"] = "normal"
+    getting_around: Literal["walk", "transit", "ride"] = "transit"
     by_neighborhood: bool = True
     user_list: list[str] = Field(default_factory=list)  # place names pasted from a blog or list
 
@@ -37,5 +36,5 @@ class InterpretRequest(BaseModel):
 
 class ReplanRequest(BaseModel):
     session_id: str
-    event: str                            # done | rain | late | tired | skip | reset
-    delay_minutes: int = 40
+    event: Literal["done", "rain", "late", "tired", "skip", "reset"]
+    delay_minutes: int = 30

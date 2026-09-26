@@ -1,11 +1,13 @@
 """Settings, read from environment variables or a .env file in the project root."""
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
 # Server-side key for Places API (New) and Routes API. Never sent to the browser.
 MAPS_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
