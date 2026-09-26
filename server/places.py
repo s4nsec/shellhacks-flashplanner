@@ -15,7 +15,7 @@ SEARCH_FIELDS = ",".join("places." + f for f in [
     "id", "displayName", "location", "regularOpeningHours", "rating",
     "userRatingCount", "types", "primaryType", "formattedAddress",
     "addressComponents", "utcOffsetMinutes", "editorialSummary", "googleMapsUri",
-    "priceLevel", "priceRange",
+    "accessibilityOptions", "servesVegetarianFood", "priceLevel", "priceRange",
 ])
 
 # Things that show up in "attractions" searches but aren't places to visit.

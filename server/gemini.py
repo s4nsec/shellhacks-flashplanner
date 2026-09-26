@@ -27,9 +27,19 @@ def client() -> genai.Client:
 # Response schemas. Fields have no defaults on purpose: the Gemini API rejects
 # default values in response schemas, so "unknown" is an empty string or list.
 
+class ParsedMeal(BaseModel):
+    name: str               # breakfast | lunch | dinner
+    time: str               # preferred start, HH:MM (24h)
+
+
 class ParsedAppointment(BaseModel):
     place: str
     time: str              # HH:MM (24h)
+
+
+class ParsedDayWindow(BaseModel):
+    start_time: str
+    end_time: str
 
 
 class ParsedTrip(BaseModel):
@@ -44,9 +54,15 @@ class ParsedTrip(BaseModel):
     skips: list[str]
     must_see: list[str]
     appointments: list[ParsedAppointment]
+    days: int
+    day_windows: list[ParsedDayWindow]
+    wheelchair_accessible: bool
+    dietary_preferences: list[str]  # vegetarian | vegan
     pace: str               # relaxed | normal | packed
     getting_around: str     # walk | transit | ride
     by_neighborhood: bool
+    meals: list[ParsedMeal]
+    auto_breaks: bool
     budget: int             # per person for the day, local currency; -1 if not said
 
 
@@ -122,9 +138,17 @@ Rules:
 - must_see: specific places they insist on.
 - appointments: fixed-time reservations, tickets, or events as place + 24-hour
   HH:MM time (for example, Joe Beef at 19:30). Do not put ordinary preferences here.
+- days: number of consecutive days requested, from 1 to 7 (default 1).
+- day_windows: one start_time/end_time object per day only when the traveler gives
+  different hours for individual days; otherwise [].
+- wheelchair_accessible: true when the traveler needs wheelchair-accessible places.
+- dietary_preferences: include "vegetarian" and/or "vegan" only when requested.
 - pace: "packed" if they want to see as much as possible, "relaxed" if they want it easy, else "normal".
 - getting_around: "walk" if walking only, "ride" if they mention taxis, rideshare or robotaxis, else "transit".
 - by_neighborhood: false only if they explicitly want maximum stops regardless of back-and-forth; otherwise true.
+- meals: the sit-down meals they want, each with name (breakfast, lunch, or dinner) and a preferred HH:MM start.
+  Default to lunch at 12:30 and dinner at 19:00. Omit meals they explicitly skip; return [] for no sit-down meals.
+- auto_breaks: false only if they explicitly do not want coffee/rest stops; otherwise true.
 - budget: how much they can spend per person on tickets and food for the day, as a whole number
   in the city's local currency (convert if they give another currency); -1 if they don't say."""
     return await _structured(prompt, ParsedTrip)
@@ -133,6 +157,8 @@ Rules:
 async def score_places(trip: dict, places: list[dict]) -> ScoredPlaces:
     prompt = f"""You are planning one day of sightseeing for this traveler:
 {json.dumps(trip, ensure_ascii=False)}
+"notes" is optional free text for anything the other fields don't cover. If it
+contradicts another field (loves, skips, must_see, pace, ...), follow the field.
 
 Candidate places from Google Maps (id, name, types, rating, review count, summary, price level):
 {json.dumps(places, ensure_ascii=False)}
@@ -143,6 +169,10 @@ Then for EVERY candidate return:
 - score: 0-100, how worthwhile this place is for THIS traveler on a short visit.
   Reward matches with "loves", give places that match "skips" under 20, and give "must_see" and
   appointment places 95+.
+  If wheelchair_accessible is true, heavily penalize candidates whose accessibilityOptions do not
+  confirm an accessible entrance. For meal candidates, heavily penalize places that explicitly do
+  not serve vegetarian food when vegetarian or vegan food is requested. Treat missing Places data
+  as uncertainty rather than proof that a place is inaccessible or unsuitable.
   Give 0 to things that aren't worth a tourist's time (hotels, generic shops, offices,
   transit stations, duplicates of another candidate).
 - kind: one of sight, museum, meal, snack, market, park, viewpoint, shopping, nightlife, other.
@@ -157,7 +187,7 @@ Then for EVERY candidate return:
 
 async def estimate_visits(trip: dict, items: list[dict]) -> list[VisitEstimate]:
     """items: [{id, name, kind, reviews: [text, ...]}]"""
-    prompt = f"""Traveler: {json.dumps({k: trip.get(k) for k in ("loves", "skips", "pace")}, ensure_ascii=False)}
+    prompt = f"""Traveler: {json.dumps({k: trip.get(k) for k in ("loves", "skips", "pace", "notes")}, ensure_ascii=False)}
 
 For each place below, decide how many minutes this traveler should spend there
 (time on site only, not getting there).
@@ -180,7 +210,7 @@ Places:
 async def narrate_plan(facts: dict) -> str:
     prompt = f"""Write a short, friendly summary (3 to 4 sentences, plain text, no lists,
 no markdown) of this day plan for the traveler. Mention how many stops, the
-neighborhood blocks if there are several, when lunch happens, any golden-hour
+neighborhood blocks if there are several, when meals and any coffee break happen, any golden-hour
 stop before sunset, when rain is expected if rain_forecast is set, one notable
 place that was left out and why, and when and where they finish. Use only facts
 from this JSON; don't invent anything.

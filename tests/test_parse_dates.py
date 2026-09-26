@@ -19,14 +19,20 @@ class FrozenDatetime(datetime):
 def parsed(**kw) -> gemini.ParsedTrip:
     fields = dict(city="Tokyo", date="", relative_day="", start_time="", end_time="",
                   start_location="", end_location="", loves=[], skips=[], must_see=[],
-                  appointments=[], pace="normal", getting_around="transit",
-                  by_neighborhood=True, budget=-1)
+                  appointments=[], days=1, day_windows=[],
+                  wheelchair_accessible=False, dietary_preferences=[],
+                  pace="normal", getting_around="transit",
+                  by_neighborhood=True, meals=[gemini.ParsedMeal(name="lunch", time="12:30")],
+                  auto_breaks=True, budget=-1)
     fields.update(kw)
     return gemini.ParsedTrip(**fields)
 
 
-def run_parse(p: gemini.ParsedTrip, utc_offset: int = 540) -> dict:
+def run_parse(p: gemini.ParsedTrip, utc_offset: int = 540, form_city: str = "",
+              queries: list | None = None) -> dict:
     async def fake_search(http, query, page_size=20, bias=None):
+        if queries is not None:
+            queries.append(query)
         return [{"utcOffsetMinutes": utc_offset}]
 
     with mock.patch.object(main, "datetime", FrozenDatetime), \
@@ -34,10 +40,18 @@ def run_parse(p: gemini.ParsedTrip, utc_offset: int = 540) -> dict:
          mock.patch.object(main.config, "MAPS_KEY", "test"), \
          mock.patch.object(main.gemini, "parse_trip", mock.AsyncMock(return_value=p)), \
          mock.patch.object(main.places, "search_text", fake_search):
-        return asyncio.run(main.parse(ParseRequest(message="Tokyo tomorrow")))
+        return asyncio.run(main.parse(ParseRequest(message="Tokyo tomorrow", city=form_city)))
 
 
 class ParseDateTests(unittest.TestCase):
+    def test_parse_returns_valid_meals_and_break_setting(self):
+        meals = [gemini.ParsedMeal(name="Breakfast", time="08:00"),
+                 gemini.ParsedMeal(name="brunch", time="11:00"),
+                 gemini.ParsedMeal(name="dinner", time="late")]
+        result = run_parse(parsed(meals=meals, auto_breaks=False))
+        self.assertEqual(result["meals"], [{"name": "breakfast", "time": "08:00"}])
+        self.assertFalse(result["auto_breaks"])
+
     def test_tomorrow_uses_city_date_not_server_date(self):
         # The server's clock says Sep 26, so "tomorrow" used to become Sep 27,
         # which is today in Tokyo.
@@ -50,6 +64,11 @@ class ParseDateTests(unittest.TestCase):
         # 20:00 UTC is 13:00 on Sep 26 in Los Angeles (UTC-7).
         result = run_parse(parsed(city="Los Angeles", relative_day="today"), utc_offset=-420)
         self.assertEqual(result["date"], "2026-09-26")
+
+    def test_form_city_wins_over_city_in_notes(self):
+        queries = []
+        run_parse(parsed(city="New York", relative_day="today"), form_city="Tokyo", queries=queries)
+        self.assertEqual(queries, ["Tokyo"])
 
     def test_explicit_date_is_kept(self):
         self.assertEqual(run_parse(parsed(date="2026-10-03"))["date"], "2026-10-03")

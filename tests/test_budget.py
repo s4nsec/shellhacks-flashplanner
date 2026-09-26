@@ -18,7 +18,9 @@ class BudgetTests(unittest.TestCase):
     def test_parse_passes_budget_through_and_unset_budget_as_none(self):
         fields = dict(city="Montreal", date="", relative_day="", start_time="", end_time="",
                       start_location="", end_location="", loves=[], skips=[], must_see=[],
-                      appointments=[], pace="normal", getting_around="transit", by_neighborhood=True)
+                      appointments=[], days=1, day_windows=[], wheelchair_accessible=False,
+                      dietary_preferences=[], pace="normal", getting_around="transit",
+                      by_neighborhood=True, meals=[], auto_breaks=True)
         with mock.patch.object(main.config, "GEMINI_API_KEY", "test"), \
              mock.patch.object(main.gemini, "parse_trip",
                                mock.AsyncMock(return_value=gemini.ParsedTrip(**fields, budget=120))):
