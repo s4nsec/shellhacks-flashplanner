@@ -89,6 +89,7 @@ fieldset{border:0;padding:0;margin:0}
 .chip[data-state=like]{background:var(--blue);border-color:var(--blue);color:#fff}
 .chip[data-state=like]::before{content:"♥ "}
 .chip[data-state=skip]{text-decoration:line-through;color:var(--muted);border-style:dashed}
+#moreInterests{margin-top:.5rem}
 .hint{font-size:.8rem;color:var(--muted);margin:.35rem 0 0;font-weight:400}
 .seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .seg2{grid-template-columns:1fr 1fr}
@@ -261,11 +262,9 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
       <fieldset>
         <legend class="lbl">Interests <span class="hint">(tap once to love, twice to skip)</span></legend>
         <div class="chips" id="chips"></div>
+        <label for="moreInterests" class="sr-only">Add an interest</label>
+        <input type="text" id="moreInterests" placeholder="Add an interest, e.g. jazz bars, bagels">
       </fieldset>
-      <div class="row2">
-        <div><label for="moreLoves">Also love</label><input type="text" id="moreLoves" placeholder="jazz bars, bagels"></div>
-        <div><label for="moreSkips">Also skip</label><input type="text" id="moreSkips" placeholder="crowds"></div>
-      </div>
       <label for="mustSee">Must see</label>
       <input type="text" id="mustSee" placeholder="Comma-separated place names">
 
@@ -299,6 +298,9 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
         <option value="normal" selected>Normal</option>
         <option value="packed">Packed (quick visits)</option>
       </select>
+      <label for="budget">Budget</label>
+      <input type="number" id="budget" min="0" step="1" placeholder="No limit">
+      <p class="hint">Per person for tickets and meals, in the local currency.</p>
 
       <details class="more">
         <summary>Plan from a list you found online</summary>
@@ -349,7 +351,7 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
       <div class="keys">
         <span><i style="background:var(--blue)"></i>Sightseeing</span>
         <span><i style="background:var(--muted);opacity:.55"></i>Getting around</span>
-        <span><i style="background:repeating-linear-gradient(45deg,var(--gold) 0 3px,transparent 3px 6px)"></i>Waiting for opening</span>
+        <span><i style="background:repeating-linear-gradient(45deg,var(--gold) 0 3px,transparent 3px 6px)"></i>Waiting to start (not open yet, early for a meal or booking, rain)</span>
       </div>
       <div class="ridecompare" id="rideCompare" hidden></div>
     </section>
@@ -378,6 +380,12 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const fmt=m=>{m=Math.round(m);const h=Math.floor(m/60)%24,mm=((m%60)+60)%60;return `${((h+11)%12)+1}:${String(mm).padStart(2,"0")} ${h>=12?"pm":"am"}`;};
+const money=(n,cur)=>{try{return new Intl.NumberFormat(undefined,{style:"currency",currency:cur,maximumFractionDigits:0}).format(n);}catch{return `${cur} ${n}`.trim();}};
+const priceText=pr=>{
+  if(pr.level)return "$".repeat(pr.level);
+  let low;try{low=new Intl.NumberFormat(undefined,{style:"currency",currency:pr.currency,currencyDisplay:"narrowSymbol",maximumFractionDigits:0}).format(pr.low);}catch{low=`$${pr.low}`;}
+  return pr.high?`${low}–${pr.high}`:`${low}+`;
+};
 const hm=m=>{m=Math.round(m);const h=Math.floor(m/60),mm=m%60;return h?`${h}h ${String(mm).padStart(2,"0")}m`:`${mm} min`;};
 const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const splitList=s=>s.split(/[,\n]/).map(x=>x.trim()).filter(Boolean);
@@ -386,11 +394,14 @@ const MODE_TXT={walk:"Walk only",transit:"Walk + transit",ride:"Walk + ride"};
 const USES_POSITION=["rain","late","tired","skip","include"];
 
 const S={likes:new Set(["architecture","food","views"]),skips:new Set(["museums"]),mode:"transit",blocks:true,
-  appointments:[],lastParsed:null,fromNotes:null,startPlace:null,endPlace:null,busy:false,plan:null,sid:null,
+  tags:[...PRESETS],appointments:[],lastParsed:null,fromNotes:null,startPlace:null,endPlace:null,busy:false,plan:null,sid:null,
   days:null,activeDay:0};
 
 /* ============ form ============ */
-$("#chips").innerHTML=PRESETS.map(t=>`<button type="button" class="chip" data-tag="${t}">${t[0].toUpperCase()+t.slice(1)}</button>`).join("");
+function renderChips(){
+  $("#chips").innerHTML=S.tags.map(t=>`<button type="button" class="chip" data-tag="${esc(t)}">${esc(t[0].toUpperCase()+t.slice(1))}</button>`).join("");
+  syncForm();
+}
 function syncForm(){
   $$(".chip").forEach(c=>{const t=c.dataset.tag;c.dataset.state=S.likes.has(t)?"like":S.skips.has(t)?"skip":"";});
   $$("#modeSeg button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.mode===S.mode));
@@ -400,7 +411,16 @@ $("#chips").addEventListener("click",e=>{const c=e.target.closest(".chip");if(!c
   if(S.likes.has(t)){S.likes.delete(t);S.skips.add(t);}else if(S.skips.has(t))S.skips.delete(t);else S.likes.add(t);syncForm();});
 $("#modeSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(b){S.mode=b.dataset.mode;syncForm();}});
 $("#styleSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(b){S.blocks=b.dataset.blocks==="1";syncForm();}});
-syncForm();
+// Typed interests become loved chips; one that is already a chip is just loved.
+function addInterests(){
+  const xs=splitList($("#moreInterests").value);if(!xs.length)return;
+  xs.forEach(x=>{let t=S.tags.find(q=>norm(q)===norm(x));
+    if(!t){t=x;S.tags.push(t);}S.skips.delete(t);S.likes.add(t);});
+  $("#moreInterests").value="";renderChips();
+}
+$("#moreInterests").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===","){e.preventDefault();addInterests();}});
+$("#moreInterests").addEventListener("change",addInterests);
+renderChips();
 
 function syncDayWindows(values=[]){
   const n=Math.max(1,Math.min(7,Number($("#days").value)||1));$("#days").value=n;
@@ -417,28 +437,29 @@ function undoNotes(){
   const a=S.fromNotes;S.fromNotes=null;S.appointments=[];S.meals=null;S.autoBreaks=true;
   if(!a)return;
   a.likes.forEach(t=>S.likes.delete(t));a.skips.forEach(t=>S.skips.delete(t));
+  S.tags=S.tags.filter(t=>!a.added.includes(t));
   const drop=(id,xs)=>{const gone=new Set(xs.map(norm));$(id).value=splitList($(id).value).filter(x=>!gone.has(norm(x))).join(", ");};
-  drop("#moreLoves",a.moreLoves);drop("#moreSkips",a.moreSkips);drop("#mustSee",a.must);
+  drop("#mustSee",a.must);
   if(a.wheelchair)$("#wheelchair").checked=false;
   if(a.diet)$("#diet").value="";
   if(a.days){$("#days").value=1;syncDayWindows();}
-  syncForm();
+  renderChips();
 }
 function applyNotes(p){
   undoNotes();
-  const a={likes:[],skips:[],moreLoves:[],moreSkips:[],must:[]},used={};
+  const a={likes:[],skips:[],added:[],must:[]},used={};
   const fill=(id,v,key)=>{if(!v||$(id).value.trim())return false;$(id).value=v;used[key]=v;return true;};
   fill("#city",p.city,"city");fill("#date",p.date,"date");
   if(fill("#startLoc",p.start_location,"start_location"))StartAC.clear();
   if(fill("#endLoc",p.end_location,"end_location"))EndAC.clear();
-  const known=new Set([...S.likes,...S.skips,...splitList($("#moreLoves").value),...splitList($("#moreSkips").value)].map(norm));
-  const addTags=(xs,set,tags,field,extra,key)=>{
-    xs.forEach(x=>{if(known.has(norm(x)))return;known.add(norm(x));const t=PRESETS.find(q=>norm(q)===norm(x));
-      if(t){set.add(t);tags.push(t);}else extra.push(x);});
-    if(extra.length)$(field).value=[...splitList($(field).value),...extra].join(", ");
-    if(tags.length||extra.length)used[key]=[...tags,...extra];};
-  addTags(p.loves||[],S.likes,a.likes,"#moreLoves",a.moreLoves,"loves");
-  addTags(p.skips||[],S.skips,a.skips,"#moreSkips",a.moreSkips,"skips");
+  if(p.budget!=null&&$("#budget").value===""){$("#budget").value=p.budget;used.budget=p.budget;}
+  const known=new Set([...S.likes,...S.skips].map(norm));
+  const addTags=(xs,set,tags,key)=>{
+    xs.forEach(x=>{if(known.has(norm(x)))return;known.add(norm(x));let t=S.tags.find(q=>norm(q)===norm(x));
+      if(!t){t=x;S.tags.push(t);a.added.push(t);}set.add(t);tags.push(t);});
+    if(tags.length)used[key]=tags;};
+  addTags(p.loves||[],S.likes,a.likes,"loves");
+  addTags(p.skips||[],S.skips,a.skips,"skips");
   const must=splitList($("#mustSee").value);
   (p.must_see||[]).forEach(x=>{if(!must.some(m=>norm(m)===norm(x))){must.push(x);a.must.push(x);}});
   $("#mustSee").value=must.join(", ");
@@ -458,7 +479,7 @@ function applyNotes(p){
   if(Array.isArray(p.meals)){S.meals=p.meals;
     if(p.meals.map(m=>m.name+m.time).join()!=="lunch12:30,dinner19:00")used.meals=p.meals;}
   if(p.auto_breaks===false){S.autoBreaks=false;used.auto_breaks=false;}
-  S.fromNotes=a;syncForm();
+  S.fromNotes=a;renderChips();
   return used;
 }
 function readForm(){
@@ -467,12 +488,13 @@ function readForm(){
     start_time:$("#tStart").value||"10:00",end_time:$("#tEnd").value||"19:00",
     start_location:$("#startLoc").value.trim()||null,start_place:S.startPlace,
     end_location:$("#endLoc").value.trim()||null,end_place:S.endPlace,
-    loves:[...S.likes,...splitList($("#moreLoves").value)],skips:[...S.skips,...splitList($("#moreSkips").value)],
+    loves:[...S.likes],skips:[...S.skips],
     must_see:splitList($("#mustSee").value),appointments:S.appointments,days,
     day_windows:$$("#dayWindows .day-window").map(r=>({start_time:r.querySelector(".day-start").value,end_time:r.querySelector(".day-end").value})),
     wheelchair_accessible:$("#wheelchair").checked,
     dietary_preferences:$("#diet").value?[$("#diet").value]:[],
     pace:$("#pace").value,getting_around:S.mode,
+    budget:$("#budget").value===""?null:Math.max(0,Math.round(Number($("#budget").value))),
     by_neighborhood:S.blocks,...(S.meals?{meals:S.meals}:{}),auto_breaks:S.autoBreaks!==false,notes:$("#msg").value.trim(),user_list:$("#userList").value.split("\n").map(x=>x.replace(/^\s*(\d+[.)]|[-*•])\s*/,"").trim()).filter(Boolean)};
 }
 
@@ -716,6 +738,7 @@ function renderItin(){
     if(st.wait>0&&st.opens!=null)meta+=`, opens ${fmt(st.opens)} so ${st.wait} min wait`;
     else if(st.wait>0)meta+=`, ${st.wait} min wait`;
     if(st.rating)meta+=`. Rated ${st.rating.toFixed(1)} (${(st.count||0).toLocaleString()})`;
+    if(st.price)meta+=`${st.rating?" · ":". "}${priceText(st.price)}`;
     const v=st.visit,quotes=(v.evidence||[]).filter(x=>x.quote),of=((v.evidence||[]).find(x=>x.of)||{}).of||quotes.length;
     const paced=v.minutes!==v.base?`, adjusted for ${esc(p.trip.pace)} pace`:"";
     let rv="";
@@ -738,6 +761,7 @@ function renderItin(){
   $("#itin").innerHTML=rows.join("");
   const sm=p.summary;
   $("#summary").innerHTML=`<strong>${sm.stops} stops</strong>${p.blocks.length?` in ${sm.zones} neighborhood${sm.zones>1?"s":""}`:""}, ${sm.walk_km.toFixed(1)} km walking, ${hm(sm.moving)} getting around. ${MODE_TXT[p.trip.getting_around]}, ${esc(p.trip.pace)} pace.`+
+    (sm.cost!=null?` About ${money(sm.cost,p.currency)} per person${p.budget!=null?` of your ${money(p.budget,p.currency)} budget`:""}.`:"")+
     (p.rain&&p.rain.length?` Rain likely ${p.rain.map(([a,b])=>`${fmt(a)} to ${fmt(b)}`).join(", ")}.`:p.forecast?" No rain in the forecast.":"");
   let cuts="";
   if(p.dropped&&p.dropped.length)cuts+=`<p class="dropped">Dropped in this re-plan: ${p.dropped.map(esc).join(", ")}</p>`;

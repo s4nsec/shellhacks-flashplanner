@@ -63,6 +63,7 @@ class ParsedTrip(BaseModel):
     by_neighborhood: bool
     meals: list[ParsedMeal]
     auto_breaks: bool
+    budget: int             # per person for the day, local currency; -1 if not said
 
 
 class PlaceJudgment(BaseModel):
@@ -71,6 +72,12 @@ class PlaceJudgment(BaseModel):
     kind: str               # sight | museum | meal | snack | market | park | viewpoint | shopping | nightlife | other
     setting: str            # indoor | outdoor | covered
     reason: str             # short phrase
+    cost: int               # typical spend per person, whole units of local currency
+
+
+class ScoredPlaces(BaseModel):
+    currency: str           # ISO 4217 code of the city's currency
+    places: list[PlaceJudgment]
 
 
 class VisitEstimate(BaseModel):
@@ -141,20 +148,23 @@ Rules:
 - by_neighborhood: false only if they explicitly want maximum stops regardless of back-and-forth; otherwise true.
 - meals: the sit-down meals they want, each with name (breakfast, lunch, or dinner) and a preferred HH:MM start.
   Default to lunch at 12:30 and dinner at 19:00. Omit meals they explicitly skip; return [] for no sit-down meals.
-- auto_breaks: false only if they explicitly do not want coffee/rest stops; otherwise true."""
+- auto_breaks: false only if they explicitly do not want coffee/rest stops; otherwise true.
+- budget: how much they can spend per person on tickets and food for the day, as a whole number
+  in the city's local currency (convert if they give another currency); -1 if they don't say."""
     return await _structured(prompt, ParsedTrip)
 
 
-async def score_places(trip: dict, places: list[dict]) -> list[PlaceJudgment]:
+async def score_places(trip: dict, places: list[dict]) -> ScoredPlaces:
     prompt = f"""You are planning one day of sightseeing for this traveler:
 {json.dumps(trip, ensure_ascii=False)}
 "notes" is optional free text for anything the other fields don't cover. If it
 contradicts another field (loves, skips, must_see, pace, ...), follow the field.
 
-Candidate places from Google Maps (id, name, types, rating, review count, summary):
+Candidate places from Google Maps (id, name, types, rating, review count, summary, price level):
 {json.dumps(places, ensure_ascii=False)}
 
-For EVERY candidate return:
+Return currency: the ISO 4217 code of the local currency (for example CAD).
+Then for EVERY candidate return:
 - id: copied exactly.
 - score: 0-100, how worthwhile this place is for THIS traveler on a short visit.
   Reward matches with "loves", give places that match "skips" under 20, and give "must_see" and
@@ -168,8 +178,11 @@ For EVERY candidate return:
 - kind: one of sight, museum, meal, snack, market, park, viewpoint, shopping, nightlife, other.
   Use "meal" only for sit-down restaurants or delis where you'd eat lunch or dinner.
 - setting: indoor, outdoor, or covered (partly sheltered, like a covered market).
-- reason: under 12 words, why it does or doesn't suit this traveler."""
-    return await _structured(prompt, list[PlaceJudgment])
+- reason: under 12 words, why it does or doesn't suit this traveler.
+- cost: what one visitor typically spends there, in whole units of the local currency:
+  the entry ticket for sights and museums, a typical meal for meals and snacks, 0 for free
+  places like parks, viewpoints and churches. Use the price level as a guide where given."""
+    return await _structured(prompt, ScoredPlaces)
 
 
 async def estimate_visits(trip: dict, items: list[dict]) -> list[VisitEstimate]:

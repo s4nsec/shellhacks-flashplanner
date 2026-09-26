@@ -23,7 +23,7 @@ def parsed(**kw) -> gemini.ParsedTrip:
                   wheelchair_accessible=False, dietary_preferences=[],
                   pace="normal", getting_around="transit",
                   by_neighborhood=True, meals=[gemini.ParsedMeal(name="lunch", time="12:30")],
-                  auto_breaks=True)
+                  auto_breaks=True, budget=-1)
     fields.update(kw)
     return gemini.ParsedTrip(**fields)
 

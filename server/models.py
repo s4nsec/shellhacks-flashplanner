@@ -63,6 +63,7 @@ class TripRequest(BaseModel):
     auto_breaks: bool = True
     user_list: list[str] = Field(default_factory=list)  # place names pasted from a blog or list
     notes: str = ""                       # optional free text; the fields above win on conflict
+    budget: Optional[int] = Field(default=None, ge=0)   # per person for the day, local currency; None = no limit
 
 
 class ParseRequest(BaseModel):
