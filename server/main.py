@@ -681,7 +681,9 @@ async def plan_stream(req: TripRequest, persist: bool = True,
             if dep_utc < now_utc + timedelta(minutes=2):
                 dep_utc = now_utc + timedelta(minutes=5)
             dep_iso = dep_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-            mats = await asyncio.gather(*(routes.matrix(http, pts, m, dep_iso) for m in modes))
+            transit_iso = routes.transit_departure(dep_utc, now_utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            mats = await asyncio.gather(*(routes.matrix(http, pts, m, transit_iso if m == "TRANSIT" else dep_iso)
+                                          for m in modes))
             walk, walk_m = mats[0]
             transit = mats[1][0]
             drive = mats[2][0] if len(mats) > 2 else None
