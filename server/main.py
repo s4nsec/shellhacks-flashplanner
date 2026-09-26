@@ -1,4 +1,4 @@
-"""Sightline API server.
+"""FlashPlanner API server.
 
 Run from the project root:
     uvicorn server.main:app --reload
@@ -23,9 +23,9 @@ from . import config, gemini, places, planner, rides, routes, session_store, wea
 from .models import InterpretRequest, ParseRequest, ReplanRequest, TripRequest
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-log = logging.getLogger("sightline")
+log = logging.getLogger("flashplanner")
 
-app = FastAPI(title="Sightline")
+app = FastAPI(title="FlashPlanner")
 WEB = Path(__file__).resolve().parent.parent / "web"
 SESSIONS: dict[str, planner.Session] = {}   # in memory, one per planned day
 SESSION_TOUCHED: dict[str, float] = {}

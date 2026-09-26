@@ -1,4 +1,4 @@
-# Sightline
+# FlashPlanner
 
 An AI agent that plans a day in a city you've never visited. Tell it how long
 you have, what you like, and where you need to finish. It finds the places worth
@@ -26,7 +26,7 @@ Built for ShellHacks: the Waymo Mobility Challenge and Best Use of Gemini API.
 | Turn "it's pouring" into an action | Gemini function calling | `interpret_event()` |
 | Map | Maps JavaScript API | `web/index.html` |
 
-Trips can span up to seven consecutive days. Sightline avoids repeating places,
+Trips can span up to seven consecutive days. FlashPlanner avoids repeating places,
 steers later days toward neighborhoods not yet visited, and accepts a separate
 start and finish time for each day. Weather and opening hours are fetched for
 each date independently.
