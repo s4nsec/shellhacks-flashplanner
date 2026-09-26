@@ -189,13 +189,18 @@ async def estimate_visits(trip: dict, items: list[dict]) -> list[VisitEstimate]:
     """items: [{id, name, kind, reviews: [text, ...]}]"""
     prompt = f"""Traveler: {json.dumps({k: trip.get(k) for k in ("loves", "skips", "pace", "notes")}, ensure_ascii=False)}
 
-For each place below, decide how many minutes this traveler should spend there
-(time on site only, not getting there).
+For each place below, decide how many minutes this traveler should spend there,
+from arrival to leaving (not getting there). Include all the waiting: the line to get
+in or buy tickets, waiting for a table, ordering, waiting for food, paying. For example,
+a restaurant with a 15 minute wait for a table needs about 45 minutes in total:
+15-20 to wait, the rest to order, eat and pay. Don't undercount; a rushed plan is worse
+than a few spare minutes.
 
 Use the reviews first: look for phrases like "allow an hour", "20 minutes is enough",
-"we spent two hours". Ignore time spent waiting in line and opening hours
-("open 24 hours" is not a visit length). If reviews give a range, use the middle.
-If reviews disagree, lean toward the typical visitor.
+"we spent two hours", and wait times like "waited 30 minutes for a table" or "long
+line". Add the wait to the visit. Ignore opening hours ("open 24 hours" is not a visit
+length). If reviews give a range, use the middle. If reviews disagree, lean toward the
+typical visitor.
 
 If at least one review mentions visit time: from_reviews = true, evidence = the exact
 short phrases you used (copied verbatim), review_numbers = which review each came from.
