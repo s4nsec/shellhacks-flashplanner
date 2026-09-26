@@ -4,7 +4,7 @@ body[data-view=results] .top{display:none}
 .results-view{position:fixed;inset:0;z-index:5;padding:0;animation:none}
 
 .results-map{position:absolute;inset:0;background:var(--land)}
-#gmap{position:absolute;inset:0;width:auto;height:auto;min-height:0;max-height:none;border-radius:0;transition:bottom .25s ease}
+#gmap{position:absolute;inset:0;width:auto;height:auto;min-height:0;max-height:none;border-radius:0}
 #svgmap{width:100%;height:100%;border-radius:0}
 .map-legend{
   position:absolute;z-index:2;top:calc(.75rem + env(safe-area-inset-top,0px));right:.75rem;

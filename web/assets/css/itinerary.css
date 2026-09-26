@@ -33,16 +33,8 @@
 #itin .now .dot{width:16px;height:16px;border:0;background:var(--gold);margin-top:.2rem;box-shadow:0 0 0 4px var(--goldsoft)}
 #itin .body{padding-bottom:.2rem;min-width:0}
 #itin .nm{font-weight:700;font-stretch:104%}
-#itin .nm a{color:inherit;text-decoration:none}
-#itin .nm a:hover{text-decoration:underline}
 #itin .done .nm{color:var(--muted);text-decoration:line-through;text-decoration-thickness:1px}
 #itin .meta{font-size:.8rem;color:var(--muted)}
-#itin .why{font-family:var(--serif);font-size:.86rem;color:var(--muted);margin-top:.1rem}
-#itin .rv{font-size:.78rem;color:var(--muted);margin-top:.15rem}
-#itin .rv summary{cursor:pointer;color:var(--blue);width:fit-content}
-#itin .rv ul{margin:.3rem 0 .2rem;padding:0 0 0 .8rem;border-left:2px solid var(--line);list-style:none}
-#itin .rv li{font-family:var(--serif);font-size:.86rem;color:var(--ink);padding:.15rem 0}
-#itin .rv li cite{display:block;font-family:var(--sans);font-style:normal;font-size:.74rem;color:var(--muted)}
 #itin .tags{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.3rem}
 #itin .tag{font-size:.72rem;border-radius:5px;padding:.08rem .4rem;background:var(--land);border:1px solid var(--line)}
 #itin .tag.gold{background:var(--goldsoft);border-color:var(--gold)}
@@ -58,9 +50,8 @@
 .cuts li{font-size:.84rem;padding:.35rem 0;border-bottom:1px dashed var(--line)}
 .cuts li:last-child{border-bottom:0}
 .cuts li span{display:block;color:var(--muted);font-size:.78rem}
-.putback,#itin .lock{float:right;margin-left:.5rem;border:1px solid var(--line);background:var(--land);border-radius:6px;padding:.1rem .45rem;font-size:.75rem;cursor:pointer}
-.putback:disabled,#itin .lock:disabled{opacity:.5;cursor:default}
-#itin .lock.on{border-color:var(--ink);font-weight:600}
+.putback{float:right;margin-left:.5rem;border:1px solid var(--line);background:var(--land);border-radius:6px;padding:.1rem .45rem;font-size:.75rem;cursor:pointer}
+.putback:disabled{opacity:.5;cursor:default}
 .dropped{color:var(--rain);font-size:.84rem;margin:.6rem 0 0}
 .attrib{font-size:.76rem;color:var(--muted);margin:.8rem 0 0}
 

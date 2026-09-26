@@ -1,0 +1,89 @@
+/* ============ stops: short rows in the list, full detail on tap, linked to the map pins ============ */
+const TRAVEL_MODE={walk:"walking",transit:"transit",ride:"driving"};
+function stopTags(st){
+  const t=[],slot={breakfast:"Breakfast slot",lunch:"Lunch slot",dinner:"Dinner slot",break:"Coffee break",golden:"Golden hour",appointment:"Fixed time"};
+  if(st.new)t.push({text:"New",cls:"new"});
+  if(!st.done&&st.locked&&!st.fixed)t.push({text:st.must?"Must-see":"Kept",cls:""});
+  Object.entries(slot).forEach(([k,text])=>{if(st.notes.includes(k))t.push({text,cls:"gold"});});
+  if(st.notes.includes("rain"))t.push({text:st.setting==="outdoor"?"Outdoors":st.setting==="covered"?"Covered":"Indoors",cls:"rain"});
+  return t;
+}
+const tagHtml=ts=>ts.map(x=>`<span class="tag ${x.cls}">${esc(x.text)}</span>`).join("");
+// One line for the list: how long, how good, how pricey.
+function stopGlance(st){
+  const bits=[`${hm(st.visit.minutes)}`];
+  if(st.wait>0)bits.push(`${st.wait} min wait`);
+  if(st.rating)bits.push(`★ ${st.rating.toFixed(1)}`);
+  if(st.price)bits.push(priceText(st.price));
+  return bits.join(" · ");
+}
+function stopRow(st,i,num){
+  return `<li class="stn${st.done?" done":""}${st.new?" new":""}${i===S.sel?" sel":""}" data-i="${i}"><span class="tm">${fmt(st.begin)}</span><span class="rail"><span class="dot">${st.done?"✓":num}</span></span><div class="body">`+
+    `<button type="button" class="stop-open" data-i="${i}"><span class="nm">${esc(st.name)}</span><span class="meta">${stopGlance(st)}</span></button>`+
+    `${st.done?"":`<div class="tags">${tagHtml(stopTags(st).slice(0,2))}</div>`}</div></li>`;
+}
+function visitNote(st){
+  const p=S.plan,v=st.visit,quotes=(v.evidence||[]).filter(x=>x.quote),of=((v.evidence||[]).find(x=>x.of)||{}).of||quotes.length;
+  const paced=v.minutes-(v.extra||0)!==v.base?`, adjusted for ${esc(p.trip.pace)} pace`:"";
+  if(v.source==="reviews"&&quotes.length)return `<details class="rv"><summary>Reviewers suggest ${hm(v.base)} (${quotes.length} of ${of} reviews)${paced}</summary><ul>${quotes.map(q=>`<li>“${esc(q.quote)}”<cite>${q.uri?`<a href="${esc(q.uri)}" target="_blank" rel="noopener">${esc(q.author)}</a>`:esc(q.author)}, Google review</cite></li>`).join("")}</ul></details>`;
+  if(v.source==="gemini")return `<p class="rv">No review mentions time, so Gemini estimated ${hm(v.base)}${paced}.</p>`;
+  return `<p class="rv">Typical visit length for a ${esc(st.kind)}${paced}.</p>`;
+}
+function lockButton(st){
+  if(st.done||!S.sid)return "";
+  const why=st.fixed?"Fixed time from your request":st.must?"Must-see from your request":"";
+  return `<button type="button" class="secondary lock${st.locked?" on":""}" data-id="${esc(st.id)}" data-locked="${st.locked?1:0}" aria-pressed="${Boolean(st.locked)}"${why?` disabled title="${why}"`:""}>${st.locked?"Kept in plan":"Keep in plan"}</button>`;
+}
+function renderStopDetail(i){
+  const all=planStops(S.plan),st=all[i],prev=i?all[i-1]:(S.plan.here||S.plan.hotel);
+  const facts=[["Time here",hm(st.visit.minutes)+(st.visit.extra>0?` (${st.visit.extra} min extra instead of waiting later)`:"")],
+    ["Getting there",legText(st.leg)]];
+  if(st.opens!=null&&st.wait>0)facts.push(["Opens",`${fmt(st.opens)}, so a ${st.wait} min wait`]);
+  if(st.rating)facts.push(["Rating",`${st.rating.toFixed(1)} from ${(st.count||0).toLocaleString()} reviews`]);
+  if(st.price)facts.push(["Price",priceText(st.price)]);
+  const dir=new URLSearchParams({api:"1",origin:mapsPoint(prev),destination:mapsPoint(st),travelmode:TRAVEL_MODE[st.leg.mode]||"walking"});
+  const place=st.maps_uri||`https://www.google.com/maps/search/?${new URLSearchParams({api:"1",query:`${st.name} ${S.plan.city}`})}`;
+  $("#stopDetail").innerHTML=`
+    <div class="detail-nav">
+      <button type="button" class="text-btn" id="detailBack">All stops</button>
+      <div class="detail-step"><button type="button" class="icon-btn" id="detailPrev" aria-label="Previous stop"${i?"":" disabled"}>‹</button><button type="button" class="icon-btn" id="detailNext" aria-label="Next stop"${i<all.length-1?"":" disabled"}>›</button></div>
+    </div>
+    <p class="eyebrow">Stop ${i+1} · ${fmt(st.begin)} to ${fmt(st.leave)}</p>
+    <h2 id="stopName" tabindex="-1">${esc(st.name)}</h2>
+    <p class="detail-kind">${esc(st.kind)}${st.zone?` · ${esc(st.zone)}`:""}</p>
+    <div class="tags">${tagHtml(stopTags(st))}</div>
+    ${st.reason?`<p class="why">${esc(st.reason)}</p>`:""}
+    <dl class="facts">${facts.map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
+    ${st.done?"":visitNote(st)}
+    <div class="detail-actions">
+      <a class="primary" href="https://www.google.com/maps/dir/?${dir}" target="_blank" rel="noopener">Directions</a>
+      <a class="secondary" href="${esc(place)}" target="_blank" rel="noopener">Open in Google Maps</a>
+      ${lockButton(st)}
+    </div>`;
+}
+// Selecting a stop highlights its row and pin; opening it swaps the list for its detail.
+function selectStop(i){
+  S.sel=i;
+  $$("#itin .stn").forEach(li=>li.classList.toggle("sel",Number(li.dataset.i)===i));
+  MapView.select(i);
+}
+function openStop(i,{focus=true}={}){
+  if(i==null||!planStops(S.plan)[i])return closeStop();
+  selectStop(i);S.detailId=planStops(S.plan)[i].id;renderStopDetail(i);
+  $("#dayList").hidden=true;$("#stopDetail").hidden=false;$("#sheetBody").scrollTop=0;
+  if(Sheet.snap==="peek")Sheet.set("half");
+  if(focus)$("#stopName").focus({preventScroll:true});
+}
+function closeStop(){
+  const was=S.detailId;S.detailId=null;
+  $("#stopDetail").hidden=true;$("#dayList").hidden=false;
+  if(was!=null&&S.sel!=null){const b=$(`#itin .stop-open[data-i="${S.sel}"]`);if(b){b.scrollIntoView({block:"nearest"});b.focus({preventScroll:true});}}
+}
+$("#itin").addEventListener("click",e=>{const b=e.target.closest(".stop-open");if(b)openStop(Number(b.dataset.i));});
+$("#stopDetail").addEventListener("click",e=>{
+  if(e.target.closest("#detailBack"))closeStop();
+  else if(e.target.closest("#detailPrev"))openStop(S.sel-1);
+  else if(e.target.closest("#detailNext"))openStop(S.sel+1);
+  else{const b=e.target.closest(".lock");if(b)replan(b.dataset.locked==="1"?"unlock":"lock",30,null,b.dataset.id);}
+});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("#stopDetail").hidden&&$("#shareMenu").hidden&&!$("#resultsView").hidden)closeStop();});

@@ -17,5 +17,5 @@ const USES_POSITION=["rain","late","tired","skip","include"];
 
 const S={likes:new Set(["architecture","food","views"]),skips:new Set(["museums"]),mode:"transit",blocks:true,
   tags:[...PRESETS],appointments:[],lastParsed:null,fromNotes:null,startPlace:null,endPlace:null,busy:false,plan:null,sid:null,
-  days:null,activeDay:0,view:"setup"};
+  days:null,activeDay:0,view:"setup",sel:null,detailId:null};
 

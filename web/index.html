@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="/assets/css/loading.css">
 <link rel="stylesheet" href="/assets/css/itinerary.css">
 <link rel="stylesheet" href="/assets/css/results.css">
+<link rel="stylesheet" href="/assets/css/stop.css">
 </head>
 <body>
 
@@ -190,6 +191,7 @@
         <div class="day-tabs" id="dayTabs" role="group" hidden aria-label="Trip days"></div>
       </header>
       <div class="sheet-body" id="sheetBody">
+        <div id="dayList">
         <p id="summary"></p>
         <h2 class="sr-only" id="h-itin">Itinerary</h2>
         <ol id="itin" aria-labelledby="h-itin"></ol><div id="cuts"></div>
@@ -198,6 +200,8 @@
           <p>Every external call and planning step used to build this itinerary.</p>
           <div id="resultsTraceSlot"></div>
         </details>
+        </div>
+        <section class="stop-detail" id="stopDetail" aria-labelledby="stopName" hidden></section>
         <p class="attrib" id="mapNote"></p>
       </div>
     </div>
@@ -216,6 +220,7 @@
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/plan.js"></script>
 <script src="/assets/js/itinerary.js"></script>
+<script src="/assets/js/stop.js"></script>
 <script src="/assets/js/export.js"></script>
 <script src="/assets/js/map.js"></script>
 <script src="/assets/js/sheet.js"></script>
