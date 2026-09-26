@@ -52,3 +52,31 @@ class MealAndLockTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ForecastTests(unittest.TestCase):
+    def park(self, **kw):
+        return planner.Cand(id="park", name="Park", lat=1.0, lng=1.0, score=90, kind="park",
+                            setting="outdoor", visit_min=60, windows=[(0, 1440)], **kw)
+
+    def test_outdoor_stop_moves_to_dry_hours(self):
+        s = session(self.park())
+        s.rain_hours = {10, 11}
+
+        route = planner.solve(s, s.start, 0, [1], time_limit_s=1)
+        stop = planner.simulate(s, route, s.start, 0)["stops"][0]
+
+        self.assertEqual(route, [1])
+        self.assertGreaterEqual(stop["begin"], 720)
+        self.assertNotIn("rain", stop["notes"])
+
+    def test_outdoor_appointment_in_rain_is_kept(self):
+        s = session(self.park(appointment_time=630))
+        s.rain_hours = {10, 11}
+
+        route = planner.solve(s, s.start, 0, [1], time_limit_s=1)
+        stop = planner.simulate(s, route, s.start, 0)["stops"][0]
+
+        self.assertEqual(route, [1])
+        self.assertEqual(stop["begin"], 630)
+        self.assertIn("rain", stop["notes"])

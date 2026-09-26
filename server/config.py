@@ -1,6 +1,8 @@
 """Settings, read from environment variables or a .env file in the project root."""
+
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
