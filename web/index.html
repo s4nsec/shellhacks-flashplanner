@@ -65,6 +65,14 @@ label,.lbl{display:block;font-size:.85rem;font-weight:600;margin:.85rem 0 .35rem
 textarea,select,input[type=time],input[type=date],input[type=text]{width:100%;border:1px solid var(--line);border-radius:10px;background:var(--land);padding:.55rem .65rem}
 textarea{resize:vertical}
 #msg{font-family:var(--serif);font-size:.95rem;line-height:1.5}
+.ac{position:relative}
+.ac-list{position:absolute;left:0;top:calc(100% + 4px);z-index:30;min-width:100%;width:max-content;max-width:min(24rem,calc(100vw - 32px));margin:0;padding:.3rem;list-style:none;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.14)}
+.ac-list [role=option]{display:flex;flex-direction:column;gap:.1rem;padding:.45rem .55rem;border-radius:7px;cursor:pointer}
+.ac-list [role=option] small{color:var(--muted);font-size:.78rem}
+.ac-list [role=option][aria-selected=true],.ac-list [role=option]:hover{background:var(--land)}
+.ac-list .ac-msg{padding:.45rem .55rem;color:var(--muted);font-size:.85rem}
+.picked{margin:.3rem 0 0;font-size:.78rem;color:var(--muted);overflow-wrap:anywhere}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
 fieldset{border:0;padding:0;margin:0}
 .chips{display:flex;flex-wrap:wrap;gap:.4rem}
@@ -227,16 +235,16 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
   <div class="col col-l">
     <section class="panel" id="tripForm" aria-labelledby="h-trip">
       <h2 id="h-trip">Your trip</h2>
-      <label for="msg">Tell the agent about your day</label>
-      <textarea id="msg" rows="5">First time in Montreal! I have from 10am to 7pm, staying at the Sheraton downtown. I love architecture, food and good views, but museums bore me. I want to see as much as possible.</textarea>
-      <p class="hint">Gemini reads this first and fills in the settings below. Tweak them after if you like.</p>
-
       <label for="city">City</label>
       <input type="text" id="city" placeholder="Montreal" autocomplete="off">
       <label for="date">Date</label>
       <input type="date" id="date">
       <div class="row2">
-        <div><label for="startLoc">Start at</label><input type="text" id="startLoc" placeholder="Hotel or address"></div>
+        <div class="ac"><label for="startLoc">Start at</label><input type="text" id="startLoc" placeholder="Hotel or address"
+          role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="startLocList" aria-describedby="startLocPicked" autocomplete="off">
+          <ul id="startLocList" class="ac-list" role="listbox" aria-label="Suggested places" hidden></ul>
+          <p id="startLocPicked" class="picked"></p>
+          <p id="startLocLive" class="sr-only" aria-live="polite"></p></div>
         <div><label for="endLoc">Finish at</label><input type="text" id="endLoc" placeholder="Station, airport, or hotel"></div>
       </div>
       <div class="row2">
@@ -273,7 +281,7 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
       <label for="pace">Pace</label>
       <select id="pace">
         <option value="relaxed">Relaxed (linger longer)</option>
-        <option value="normal">Normal</option>
+        <option value="normal" selected>Normal</option>
         <option value="packed">Packed (quick visits)</option>
       </select>
 
@@ -283,6 +291,10 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
         <textarea id="userList" rows="5" placeholder="Mount Royal&#10;Notre-Dame Basilica&#10;Jean-Talon Market"></textarea>
         <p class="hint">When this has names, the plan uses only these places (plus your must-sees).</p>
       </details>
+
+      <label for="msg">Anything else? <span class="hint">(optional)</span></label>
+      <textarea id="msg" rows="3" placeholder="Avoid steep hills, prefer quiet places, dinner booked at Joe Beef at 7:30pm"></textarea>
+      <p class="hint">Only for things the settings above don't cover. If this disagrees with them, the settings win.</p>
 
       <div class="actions">
         <button class="primary" id="planBtn" type="button">Plan my day</button>
@@ -379,7 +391,7 @@ const PRESETS=["architecture","food","views","history","art","museums","nature",
 const MODE_TXT={walk:"Walk only",transit:"Walk + transit",ride:"Walk + ride"};
 
 const S={likes:new Set(["architecture","food","views"]),skips:new Set(["museums"]),mode:"transit",blocks:true,
-  appointments:[],lastParsed:null,busy:false,plan:null,sid:null};
+  appointments:[],lastParsed:null,startPlace:null,busy:false,plan:null,sid:null};
 
 /* ============ form ============ */
 $("#chips").innerHTML=PRESETS.map(t=>`<button type="button" class="chip" data-tag="${t}">${t[0].toUpperCase()+t.slice(1)}</button>`).join("");
@@ -395,36 +407,116 @@ $("#styleSeg").addEventListener("click",e=>{const b=e.target.closest("button");i
 syncForm();
 
 const norm=s=>s.toLowerCase().trim().replace(/s$/,"");
-function applyParsed(p){
-  if(p.city)$("#city").value=p.city;
-  if(p.date)$("#date").value=p.date;
-  if(p.start_time)$("#tStart").value=p.start_time;
-  if(p.end_time)$("#tEnd").value=p.end_time;
-  if(p.start_location)$("#startLoc").value=p.start_location;
-  if(p.end_location)$("#endLoc").value=p.end_location;
-  if(p.pace)$("#pace").value=p.pace;
-  if(p.getting_around)S.mode=p.getting_around;
-  if(typeof p.by_neighborhood==="boolean")S.blocks=p.by_neighborhood;
-  if((p.loves||[]).length||(p.skips||[]).length){
-    S.likes=new Set();S.skips=new Set();const moreL=[],moreS=[];
-    (p.loves||[]).forEach(x=>{const t=PRESETS.find(q=>norm(q)===norm(x));t?S.likes.add(t):moreL.push(x);});
-    (p.skips||[]).forEach(x=>{const t=PRESETS.find(q=>norm(q)===norm(x));t?S.skips.add(t):moreS.push(x);});
-    $("#moreLoves").value=moreL.join(", ");$("#moreSkips").value=moreS.join(", ");
-  }
-  if((p.must_see||[]).length)$("#mustSee").value=p.must_see.join(", ");
+// Notes only fill what the settings leave open: blank fields, new interests, must-sees and bookings.
+function applyNotes(p){
+  const blank=id=>!$(id).value.trim();
+  if(p.city&&blank("#city"))$("#city").value=p.city;
+  if(p.date&&blank("#date"))$("#date").value=p.date;
+  if(p.start_location&&blank("#startLoc")){$("#startLoc").value=p.start_location;clearStartPlace();}
+  if(p.end_location&&blank("#endLoc"))$("#endLoc").value=p.end_location;
+  const known=new Set([...S.likes,...S.skips,...splitList($("#moreLoves").value),...splitList($("#moreSkips").value)].map(norm));
+  const addTags=(xs,set,field)=>{const extra=[];
+    xs.forEach(x=>{if(known.has(norm(x)))return;known.add(norm(x));const t=PRESETS.find(q=>norm(q)===norm(x));t?set.add(t):extra.push(x);});
+    if(extra.length)$(field).value=[...splitList($(field).value),...extra].join(", ");};
+  addTags(p.loves||[],S.likes,"#moreLoves");addTags(p.skips||[],S.skips,"#moreSkips");
+  const must=splitList($("#mustSee").value);
+  (p.must_see||[]).forEach(x=>{if(!must.some(m=>norm(m)===norm(x)))must.push(x);});
+  $("#mustSee").value=must.join(", ");
   S.appointments=p.appointments||[];
   syncForm();
 }
 function readForm(){
   return {city:$("#city").value.trim(),date:$("#date").value||null,
     start_time:$("#tStart").value||"10:00",end_time:$("#tEnd").value||"19:00",
-    start_location:$("#startLoc").value.trim()||null,
+    start_location:$("#startLoc").value.trim()||null,start_place:S.startPlace,
     end_location:$("#endLoc").value.trim()||null,
     loves:[...S.likes,...splitList($("#moreLoves").value)],skips:[...S.skips,...splitList($("#moreSkips").value)],
     must_see:splitList($("#mustSee").value),appointments:S.appointments,
     pace:$("#pace").value,getting_around:S.mode,
-    by_neighborhood:S.blocks,user_list:$("#userList").value.split("\n").map(x=>x.replace(/^\s*(\d+[.)]|[-*•])\s*/,"").trim()).filter(Boolean)};
+    by_neighborhood:S.blocks,notes:$("#msg").value.trim(),user_list:$("#userList").value.split("\n").map(x=>x.replace(/^\s*(\d+[.)]|[-*•])\s*/,"").trim()).filter(Boolean)};
 }
+
+/* ============ "Start at" suggestions (Places API via the browser key) ============ */
+// Falls back to plain text: with no browser key, a failed request, or no pick,
+// the server looks up whatever was typed.
+const AC={input:$("#startLoc"),list:$("#startLocList"),items:[],active:-1,seq:0,timer:0,token:null,lib:null,biasCity:null,bias:null};
+async function placesLib(){
+  if(MapView.kind!=="google")return null;
+  try{AC.lib??=await google.maps.importLibrary("places");}catch(e){console.warn(e);return null;}
+  return AC.lib;
+}
+async function cityBias(lib){
+  const city=$("#city").value.trim();
+  if(!city)return null;
+  if(AC.biasCity!==city){
+    AC.biasCity=city;AC.bias=null;
+    try{const {places}=await lib.Place.searchByText({textQuery:city,fields:["viewport"],maxResultCount:1});AC.bias=places[0]?.viewport||null;}
+    catch(e){console.warn(e);}
+  }
+  return AC.bias;  // a bias, not a restriction, so places outside the city still show
+}
+function clearStartPlace(){S.startPlace=null;$("#startLocPicked").textContent="";}
+function acAnnounce(t){$("#startLocLive").textContent=t;}
+function acOpen(){AC.list.hidden=false;AC.input.setAttribute("aria-expanded","true");}
+function acClose(){AC.seq++;clearTimeout(AC.timer);AC.list.hidden=true;AC.active=-1;
+  AC.input.setAttribute("aria-expanded","false");AC.input.removeAttribute("aria-activedescendant");}
+function acMessage(t){AC.items=[];AC.active=-1;AC.list.innerHTML=`<li class="ac-msg">${esc(t)}</li>`;acOpen();acAnnounce(t);}
+function acRender(){
+  AC.active=-1;
+  AC.list.innerHTML=AC.items.map((p,i)=>`<li role="option" id="startLocOpt${i}" data-i="${i}" aria-selected="false"><b>${esc(p.mainText?.text||p.text?.text)}</b>${p.secondaryText?.text?`<small>${esc(p.secondaryText.text)}</small>`:""}</li>`).join("");
+  acOpen();acAnnounce(`${AC.items.length} suggestion${AC.items.length===1?"":"s"}. Use the arrow keys to choose.`);
+}
+async function acFetch(q){
+  const seq=++AC.seq,lib=await placesLib();
+  if(!lib||seq!==AC.seq)return;
+  acMessage("Searching…");
+  try{
+    AC.token??=new lib.AutocompleteSessionToken();
+    const req={input:q,sessionToken:AC.token},bias=await cityBias(lib);
+    if(bias)req.locationBias=bias;
+    const {suggestions}=await lib.AutocompleteSuggestion.fetchAutocompleteSuggestions(req);
+    if(seq!==AC.seq)return;
+    AC.items=suggestions.map(x=>x.placePrediction).filter(Boolean).slice(0,6);
+    AC.items.length?acRender():acMessage("No matches. We'll search for what you typed.");
+  }catch(e){console.warn(e);if(seq===AC.seq)acMessage("Suggestions aren't available. We'll search for what you typed.");}
+}
+function acMove(d){
+  if(AC.list.hidden||!AC.items.length)return;
+  AC.active=(AC.active+d+AC.items.length)%AC.items.length;
+  $$("#startLocList [role=option]").forEach((li,i)=>li.setAttribute("aria-selected",String(i===AC.active)));
+  AC.input.setAttribute("aria-activedescendant",`startLocOpt${AC.active}`);
+  $(`#startLocOpt${AC.active}`).scrollIntoView({block:"nearest"});
+}
+async function acPick(i){
+  const pred=AC.items[i];if(!pred)return;
+  const label=pred.mainText?.text||pred.text?.text||"";
+  AC.input.value=label;clearStartPlace();acClose();
+  try{
+    const place=pred.toPlace();
+    await place.fetchFields({fields:["displayName","formattedAddress","location","utcOffsetMinutes"]});
+    AC.token=null;  // a details fetch ends the billing session
+    if(AC.input.value!==label||!place.location)return;  // edited while loading
+    S.startPlace={place_id:place.id,name:place.displayName||label,lat:place.location.lat(),lng:place.location.lng(),
+      utc_offset_minutes:place.utcOffsetMinutes??null};
+    $("#startLocPicked").textContent=place.formattedAddress||"";
+    acAnnounce(`Starting at ${S.startPlace.name}`);
+  }catch(e){console.warn(e);acAnnounce("Couldn't load that place. We'll search for what you typed.");}
+}
+AC.input.addEventListener("input",()=>{
+  clearStartPlace();clearTimeout(AC.timer);
+  const q=AC.input.value.trim();
+  if(q.length<3){acClose();return;}
+  AC.timer=setTimeout(()=>acFetch(q),250);
+});
+AC.input.addEventListener("keydown",e=>{
+  if(e.key==="ArrowDown"){e.preventDefault();if(AC.list.hidden&&AC.items.length){acOpen();}acMove(1);}
+  else if(e.key==="ArrowUp"){e.preventDefault();acMove(-1);}
+  else if(e.key==="Enter"&&!AC.list.hidden&&AC.active>=0){e.preventDefault();acPick(AC.active);}
+  else if(e.key==="Escape"&&!AC.list.hidden){e.preventDefault();acClose();}
+});
+AC.input.addEventListener("blur",()=>acClose());
+AC.list.addEventListener("mousedown",e=>e.preventDefault());  // keep focus in the input
+AC.list.addEventListener("click",e=>{const li=e.target.closest("[role=option]");if(li)acPick(Number(li.dataset.i));});
 
 /* ============ server calls ============ */
 async function errorText(r){try{const j=await r.json();return j.detail||JSON.stringify(j);}catch{return `${r.status} ${r.statusText}`;}}
@@ -471,11 +563,12 @@ async function planDay(){
   if(S.busy)return;setBusy(true);traceReset();
   try{
     const text=$("#msg").value.trim();
-    if(text&&text!==S.lastParsed){
-      traceStep({key:"parse",status:"run",title:"Understand the request",call:"gemini.generate_content(message, schema=ParsedTrip)",source:"server/gemini.py: parse_trip()"});
-      const t0=performance.now();const p=await postJSON("/api/parse",{message:text});
-      applyParsed(p);S.lastParsed=text;
-      traceStep({key:"parse",status:"ok",result:"Pulled these settings out of your message:",detail:JSON.stringify(p,null,2),ms:Math.round(performance.now()-t0)});
+    if(!text){S.appointments=[];S.lastParsed=null;}
+    else if(text!==S.lastParsed){
+      traceStep({key:"parse",status:"run",title:"Read your extra notes",call:"gemini.generate_content(notes, schema=ParsedTrip)",source:"server/gemini.py: parse_trip()"});
+      const t0=performance.now();const p=await postJSON("/api/parse",{message:text,city:$("#city").value.trim()});
+      applyNotes(p);S.lastParsed=text;
+      traceStep({key:"parse",status:"ok",result:"Used these only where your settings were blank or silent:",detail:JSON.stringify(p,null,2),ms:Math.round(performance.now()-t0)});
     }
     const body=readForm();
     if(!body.city){setStory("Add the city you're visiting, then plan again.",true);return;}

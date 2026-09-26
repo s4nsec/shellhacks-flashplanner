@@ -252,7 +252,8 @@ async def parse(req: ParseRequest):
         raise HTTPException(502, f"Gemini couldn't read the message: {e}")
     date = p.date or None
     if p.relative_day:
-        day = resolve_relative_day(p.relative_day, await city_today(p.city, p.start_location))
+        day = resolve_relative_day(
+            p.relative_day, await city_today(p.city or req.city, p.start_location))
         date = day.isoformat() if day else date
     return {
         "city": p.city,
@@ -270,6 +271,29 @@ async def parse(req: ParseRequest):
 
 
 # ---------- 2. plan the day ----------
+
+async def resolve_start(http: httpx.AsyncClient, trip: dict, city: str) -> tuple[dict, int] | str:
+    """The starting point and the city's UTC offset, or an error message.
+
+    A place picked from autocomplete already has coordinates, so it isn't looked
+    up again. Only its UTC offset may be missing, and that comes from the city.
+    """
+    picked = trip.get("start_place")
+    if picked:
+        hotel = {"name": picked["name"], "lat": picked["lat"], "lng": picked["lng"]}
+        if picked.get("utc_offset_minutes") is not None:
+            return hotel, picked["utc_offset_minutes"]
+        hits = await places.search_text(http, city, 1, (hotel["lat"], hotel["lng"]))
+        return hotel, (hits[0].get("utcOffsetMinutes", 0) if hits else 0)
+    start_q = f"{trip['start_location']}, {city}" if trip.get("start_location") else city
+    hits = await places.search_text(http, start_q, 1)
+    if not hits:
+        return f"Google Maps couldn't find “{start_q}”. Try a hotel name or street address."
+    sp = hits[0]
+    hotel = {"name": places.display_name(sp), "lat": sp["location"]["latitude"],
+             "lng": sp["location"]["longitude"]}
+    return hotel, sp.get("utcOffsetMinutes", 0)
+
 
 @app.post("/api/plan")
 async def plan(req: TripRequest):
@@ -289,19 +313,15 @@ async def plan_stream(req: TripRequest):
     try:
         async with httpx.AsyncClient(timeout=40) as http:
             # --- find the starting point and candidate places
-            start_q = f"{trip['start_location']}, {city}" if trip.get("start_location") else city
             yield step_run("find", "Find places worth seeing",
                            f'places.searchText("top tourist attractions in {city}")',
                            "server/places.py: search_text()")
             t0 = time.perf_counter()
-            start_hits = await places.search_text(http, start_q, 1)
-            if not start_hits:
-                yield ev(type="error", message=f"Google Maps couldn't find “{start_q}”. Try a hotel name or street address.")
+            start = await resolve_start(http, trip, city)
+            if isinstance(start, str):
+                yield ev(type="error", message=start)
                 return
-            sp = start_hits[0]
-            hotel = {"name": places.display_name(sp), "lat": sp["location"]["latitude"],
-                     "lng": sp["location"]["longitude"]}
-            utc_offset = sp.get("utcOffsetMinutes", 0)
+            hotel, utc_offset = start
             bias = (hotel["lat"], hotel["lng"])
 
             end_location = hotel
@@ -373,7 +393,7 @@ async def plan_stream(req: TripRequest):
                       "must_see": "must" in flags.get(p["id"], set()),
                       "appointment": "appointment" in flags.get(p["id"], set())} for p in raw]
             judged = {j.id: j for j in await gemini.score_places(
-                {k: trip[k] for k in ("city", "loves", "skips", "must_see", "appointments", "pace")}, brief)}
+                {k: trip[k] for k in ("city", "loves", "skips", "must_see", "appointments", "pace", "notes")}, brief)}
             cands = []
             for p in raw:
                 j = judged.get(p["id"])
@@ -767,7 +787,7 @@ async def _story(s, cuts):
         "rain_forecast": _windows_text(_rain_windows(s.rain_hours, s.start, s.deadline)) or None,
         "left_out": cuts[:2],
         "finish": {"name": s.end_location["name"], "at": fmt(res["end"])},
-        "traveler": {k: s.trip.get(k) for k in ("loves", "skips", "pace")},
+        "traveler": {k: s.trip.get(k) for k in ("loves", "skips", "pace", "notes")},
     }
     try:
         return await gemini.narrate_plan(facts)

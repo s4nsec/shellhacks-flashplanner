@@ -13,7 +13,7 @@ Built for ShellHacks: the Waymo Mobility Challenge and Best Use of Gemini API.
 
 | Step | Service | Code |
 |---|---|---|
-| Read the traveler's message into settings | Gemini (structured output) | `server/gemini.py: parse_trip()` |
+| Read the optional "anything else" notes into settings | Gemini (structured output) | `server/gemini.py: parse_trip()` |
 | Find candidate places, hours, ratings | Places API (New) Text Search | `server/places.py: search_text()` |
 | Score each place for this traveler | Gemini | `server/gemini.py: score_places()` |
 | Read up to 5 reviews per place for visit length | Places API + Gemini | `get_reviews()`, `estimate_visits()` |
@@ -49,7 +49,8 @@ You need Python 3.10 or newer.
      **Maps JavaScript API**.
    - Create a **server key** under Credentials. Under API restrictions, allow
      Places API (New), Routes API and Weather API.
-   - Create a **browser key**. Allow only Maps JavaScript API, and under
+   - Create a **browser key**. Allow only Maps JavaScript API and Places API
+     (New) (for the "Start at" suggestions), and under
      application restrictions add the HTTP referrer `http://localhost:8000/*`
      (plus your deployed URL later).
 
@@ -74,8 +75,10 @@ You need Python 3.10 or newer.
 
 - `GET /api/config`: which keys are set, and the browser map key.
 - `GET /api/demo`: static no-key Montreal plan for judging or screenshots.
-- `POST /api/parse` `{message}`: Gemini turns a message into trip settings.
-- `POST /api/plan` with the trip settings: streams newline-delimited JSON,
+- `POST /api/parse` `{message, city?}`: Gemini turns the optional notes into trip
+  settings. The page only uses them to fill fields left blank.
+- `POST /api/plan` with the trip settings (plus `start_place` when "Start at"
+  came from autocomplete, and optional `notes`): streams newline-delimited JSON,
   one `step` event per stage, then a `plan` event (or an `error` event).
 - `POST /api/interpret` `{session_id, text}`: Gemini function call, returns
   `{reason, delay_minutes}`.

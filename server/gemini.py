@@ -124,6 +124,8 @@ Rules:
 async def score_places(trip: dict, places: list[dict]) -> list[PlaceJudgment]:
     prompt = f"""You are planning one day of sightseeing for this traveler:
 {json.dumps(trip, ensure_ascii=False)}
+"notes" is optional free text for anything the other fields don't cover. If it
+contradicts another field (loves, skips, must_see, pace, ...), follow the field.
 
 Candidate places from Google Maps (id, name, types, rating, review count, summary):
 {json.dumps(places, ensure_ascii=False)}
@@ -144,7 +146,7 @@ For EVERY candidate return:
 
 async def estimate_visits(trip: dict, items: list[dict]) -> list[VisitEstimate]:
     """items: [{id, name, kind, reviews: [text, ...]}]"""
-    prompt = f"""Traveler: {json.dumps({k: trip.get(k) for k in ("loves", "skips", "pace")}, ensure_ascii=False)}
+    prompt = f"""Traveler: {json.dumps({k: trip.get(k) for k in ("loves", "skips", "pace", "notes")}, ensure_ascii=False)}
 
 For each place below, decide how many minutes this traveler should spend there
 (time on site only, not getting there).

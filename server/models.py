@@ -8,12 +8,22 @@ class Appointment(BaseModel):
     time: str                            # 24-hour HH:MM
 
 
+class StartPlace(BaseModel):
+    """A place picked from the browser's autocomplete, so the server needn't look it up again."""
+    place_id: str = ""
+    name: str
+    lat: float
+    lng: float
+    utc_offset_minutes: Optional[int] = None
+
+
 class TripRequest(BaseModel):
     city: str
     date: Optional[str] = None            # YYYY-MM-DD, local to the city; defaults to today there
     start_time: str = "10:00"             # 24-hour HH:MM
     end_time: str = "19:00"
     start_location: Optional[str] = None  # hotel name or address; defaults to the city center
+    start_place: Optional[StartPlace] = None  # set when start_location came from autocomplete
     end_location: Optional[str] = None    # station, airport, hotel, etc.; defaults to start_location
     loves: list[str] = Field(default_factory=list)
     skips: list[str] = Field(default_factory=list)
@@ -23,10 +33,12 @@ class TripRequest(BaseModel):
     getting_around: Literal["walk", "transit", "ride"] = "transit"
     by_neighborhood: bool = True
     user_list: list[str] = Field(default_factory=list)  # place names pasted from a blog or list
+    notes: str = ""                       # optional free text; the fields above win on conflict
 
 
 class ParseRequest(BaseModel):
     message: str
+    city: str = ""                        # the form's city, when the message doesn't name one
 
 
 class InterpretRequest(BaseModel):
