@@ -235,8 +235,10 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
   <div class="col col-l">
     <section class="panel" id="tripForm" aria-labelledby="h-trip">
       <h2 id="h-trip">Your trip</h2>
-      <label for="city">City</label>
-      <input type="text" id="city" placeholder="Montreal" autocomplete="off">
+      <div class="ac"><label for="city">City</label><input type="text" id="city" placeholder="Montreal, Canada"
+        role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="cityList" aria-describedby="cityLive" autocomplete="off">
+        <ul id="cityList" class="ac-list" role="listbox" aria-label="Suggested cities" hidden></ul>
+        <p id="cityLive" class="sr-only" aria-live="polite"></p></div>
       <label for="date">Date</label>
       <input type="date" id="date">
       <label for="days">Number of days</label>
@@ -499,7 +501,7 @@ function readForm(){
 }
 
 /* ============ location suggestions (Places API via the browser key) ============ */
-// Both fields fall back to plain text: with no browser key, a failed request,
+// All three fields fall back to plain text: with no browser key, a failed request,
 // or no pick, the server looks up whatever was typed.
 const PLACE_AC={lib:null,biasCity:null,bias:null};
 async function placesLib(){
@@ -518,16 +520,20 @@ async function cityBias(lib){
   }
   return PLACE_AC.bias;  // a bias, not a restriction, so places outside the city still show
 }
-function placeAutocomplete({inputId,listId,pickedId,liveId,stateKey,prefix,announcement,withOffset=false}){
-  const ac={input:$(inputId),list:$(listId),picked:$(pickedId),live:$(liveId),items:[],active:-1,seq:0,pick:0,timer:0,token:null};
+function placeAutocomplete({inputId,listId,pickedId=null,liveId,stateKey=null,prefix,announcement,withOffset=false,citiesOnly=false}){
+  const ac={input:$(inputId),list:$(listId),picked:pickedId?$(pickedId):null,live:$(liveId),items:[],active:-1,seq:0,pick:0,timer:0,token:null};
   const announce=t=>{ac.live.textContent=t;};
-  const clear=()=>{S[stateKey]=null;ac.picked.textContent="";};
+  const clear=()=>{if(stateKey)S[stateKey]=null;if(ac.picked)ac.picked.textContent="";};
   const open=()=>{ac.list.hidden=false;ac.input.setAttribute("aria-expanded","true");};
   const close=()=>{ac.seq++;clearTimeout(ac.timer);ac.list.hidden=true;ac.active=-1;
     ac.input.setAttribute("aria-expanded","false");ac.input.removeAttribute("aria-activedescendant");};
   const message=t=>{ac.items=[];ac.active=-1;ac.list.innerHTML=`<li class="ac-msg">${esc(t)}</li>`;open();announce(t);};
+  const cityCountry=p=>{
+    const city=p.mainText?.text||p.text?.text||"",parts=(p.secondaryText?.text||"").split(",");
+    const country=parts.at(-1)?.trim()||"";return {city,country,label:[city,country].filter(Boolean).join(", ")};};
   const render=()=>{ac.active=-1;
-    ac.list.innerHTML=ac.items.map((p,i)=>`<li role="option" id="${prefix}Opt${i}" data-i="${i}" aria-selected="false"><b>${esc(p.mainText?.text||p.text?.text)}</b>${p.secondaryText?.text?`<small>${esc(p.secondaryText.text)}</small>`:""}</li>`).join("");
+    ac.list.innerHTML=ac.items.map((p,i)=>{const cc=cityCountry(p),main=citiesOnly?cc.city:(p.mainText?.text||p.text?.text),secondary=citiesOnly?cc.country:p.secondaryText?.text;
+      return `<li role="option" id="${prefix}Opt${i}" data-i="${i}" aria-selected="false"><b>${esc(main)}</b>${secondary?`<small>${esc(secondary)}</small>`:""}</li>`;}).join("");
     open();announce(`${ac.items.length} suggestion${ac.items.length===1?"":"s"}. Use the arrow keys to choose.`);};
   const fetchSuggestions=async q=>{
     const seq=++ac.seq,lib=await placesLib();
@@ -535,8 +541,9 @@ function placeAutocomplete({inputId,listId,pickedId,liveId,stateKey,prefix,annou
     message("Searching…");
     try{
       ac.token??=new lib.AutocompleteSessionToken();
-      const req={input:q,sessionToken:ac.token},bias=await cityBias(lib);
-      if(bias)req.locationBias=bias;
+      const req={input:q,sessionToken:ac.token};
+      if(citiesOnly)req.includedPrimaryTypes=["(cities)"];
+      else{const bias=await cityBias(lib);if(bias)req.locationBias=bias;}
       const {suggestions}=await lib.AutocompleteSuggestion.fetchAutocompleteSuggestions(req);
       if(seq!==ac.seq)return;
       ac.items=suggestions.map(x=>x.placePrediction).filter(Boolean).slice(0,6);
@@ -552,14 +559,20 @@ function placeAutocomplete({inputId,listId,pickedId,liveId,stateKey,prefix,annou
   };
   const pick=async i=>{
     const pred=ac.items[i];if(!pred)return;
-    const label=pred.mainText?.text||pred.text?.text||"",pickId=++ac.pick;
+    const cc=cityCountry(pred),label=citiesOnly?cc.label:(pred.mainText?.text||pred.text?.text||""),pickId=++ac.pick;
     ac.input.value=label;clear();close();
     try{
-      const place=pred.toPlace(),fields=["displayName","formattedAddress","location"];
+      const place=pred.toPlace(),fields=["displayName","formattedAddress"];
+      if(citiesOnly)fields.push("addressComponents");else fields.push("location");
       if(withOffset)fields.push("utcOffsetMinutes");
       await place.fetchFields({fields});
       ac.token=null;
-      if(pickId!==ac.pick||ac.input.value!==label||!place.location)return;
+      if(pickId!==ac.pick||ac.input.value!==label||(!citiesOnly&&!place.location))return;
+      if(citiesOnly){
+        const country=place.addressComponents?.find(c=>c.types?.includes("country"))?.longText||cc.country;
+        ac.input.value=[place.displayName||cc.city,country].filter(Boolean).join(", ");
+        PLACE_AC.biasCity=null;PLACE_AC.bias=null;StartAC.clear();EndAC.clear();announce(`${announcement} ${ac.input.value}`);return;
+      }
       const selected={place_id:place.id,name:place.displayName||label,lat:place.location.lat(),lng:place.location.lng()};
       if(withOffset)selected.utc_offset_minutes=place.utcOffsetMinutes??null;
       S[stateKey]=selected;ac.picked.textContent=place.formattedAddress||"";
@@ -579,11 +592,13 @@ function placeAutocomplete({inputId,listId,pickedId,liveId,stateKey,prefix,annou
   ac.list.addEventListener("click",e=>{const li=e.target.closest("[role=option]");if(li)pick(Number(li.dataset.i));});
   return {clear,close};
 }
+const CityAC=placeAutocomplete({inputId:"#city",listId:"#cityList",liveId:"#cityLive",
+  prefix:"city",announcement:"City selected:",citiesOnly:true});
 const StartAC=placeAutocomplete({inputId:"#startLoc",listId:"#startLocList",pickedId:"#startLocPicked",liveId:"#startLocLive",
   stateKey:"startPlace",prefix:"startLoc",announcement:"Starting at",withOffset:true});
 const EndAC=placeAutocomplete({inputId:"#endLoc",listId:"#endLocList",pickedId:"#endLocPicked",liveId:"#endLocLive",
   stateKey:"endPlace",prefix:"endLoc",announcement:"Finishing at"});
-$("#city").addEventListener("input",()=>{StartAC.clear();EndAC.clear();});  // picks belong to the old city
+$("#city").addEventListener("input",()=>{PLACE_AC.biasCity=null;PLACE_AC.bias=null;StartAC.clear();EndAC.clear();});  // picks belong to the old city
 
 /* ============ server calls ============ */
 async function errorText(r){try{const j=await r.json();return j.detail||JSON.stringify(j);}catch{return `${r.status} ${r.statusText}`;}}

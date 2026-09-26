@@ -55,7 +55,7 @@ You need Python 3.10 or newer.
    - Create a **server key** under Credentials. Under API restrictions, allow
      Places API (New), Routes API and Weather API.
    - Create a **browser key**. Allow only Maps JavaScript API and Places API
-     (New) (for the "Start at" suggestions), and under
+     (New) (for the city, "Start at", and "Finish at" suggestions), and under
      application restrictions add the HTTP referrer `http://localhost:8000/*`
      (plus your deployed URL later).
 
