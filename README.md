@@ -1,10 +1,11 @@
 # Sightline
 
 An AI agent that plans a day in a city you've never visited. Tell it how long
-you have and what you like. It finds the places worth seeing, reads reviews to
-decide how long to stay at each, gets real travel times, and uses OR-Tools to
-pick the best set of stops and the order to visit them. When the day changes
-("it's pouring", "I'm running late"), it re-plans from where you are.
+you have, what you like, and where you need to finish. It finds the places worth
+seeing, reads reviews to decide how long to stay at each, gets real travel times,
+and uses OR-Tools to pick the best set of stops and the order to visit them. When
+the day changes ("it's pouring", "I'm running late"), it re-plans from where you
+are.
 
 Built for ShellHacks: the Waymo Mobility Challenge and Best Use of Gemini API.
 

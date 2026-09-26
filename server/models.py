@@ -9,6 +9,7 @@ class TripRequest(BaseModel):
     start_time: str = "10:00"             # 24-hour HH:MM
     end_time: str = "19:00"
     start_location: Optional[str] = None  # hotel name or address; defaults to the city center
+    end_location: Optional[str] = None    # station, airport, hotel, etc.; defaults to start_location
     loves: list[str] = []
     skips: list[str] = []
     must_see: list[str] = []

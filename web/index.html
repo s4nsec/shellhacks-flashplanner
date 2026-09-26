@@ -217,13 +217,15 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
 
       <label for="city">City</label>
       <input type="text" id="city" placeholder="Montreal" autocomplete="off">
+      <label for="date">Date</label>
+      <input type="date" id="date">
       <div class="row2">
-        <div><label for="date">Date</label><input type="date" id="date"></div>
-        <div><label for="startLoc">Staying at</label><input type="text" id="startLoc" placeholder="Hotel or address"></div>
+        <div><label for="startLoc">Start at</label><input type="text" id="startLoc" placeholder="Hotel or address"></div>
+        <div><label for="endLoc">Finish at</label><input type="text" id="endLoc" placeholder="Station, airport, or hotel"></div>
       </div>
       <div class="row2">
         <div><label for="tStart">Start</label><input type="time" id="tStart" value="10:00"></div>
-        <div><label for="tEnd">Back by</label><input type="time" id="tEnd" value="19:00"></div>
+        <div><label for="tEnd">Finish by</label><input type="time" id="tEnd" value="19:00"></div>
       </div>
 
       <fieldset>
@@ -368,6 +370,7 @@ function applyParsed(p){
   if(p.start_time)$("#tStart").value=p.start_time;
   if(p.end_time)$("#tEnd").value=p.end_time;
   if(p.start_location)$("#startLoc").value=p.start_location;
+  if(p.end_location)$("#endLoc").value=p.end_location;
   if(p.pace)$("#pace").value=p.pace;
   if(p.getting_around)S.mode=p.getting_around;
   if(typeof p.by_neighborhood==="boolean")S.blocks=p.by_neighborhood;
@@ -384,6 +387,7 @@ function readForm(){
   return {city:$("#city").value.trim(),date:$("#date").value||null,
     start_time:$("#tStart").value||"10:00",end_time:$("#tEnd").value||"19:00",
     start_location:$("#startLoc").value.trim()||null,
+    end_location:$("#endLoc").value.trim()||null,
     loves:[...S.likes,...splitList($("#moreLoves").value)],skips:[...S.skips,...splitList($("#moreSkips").value)],
     must_see:splitList($("#mustSee").value),pace:$("#pace").value,getting_around:S.mode,
     by_neighborhood:S.blocks,user_list:$("#userList").value.split("\n").map(x=>x.replace(/^\s*(\d+[.)]|[-*•])\s*/,"").trim()).filter(Boolean)};
@@ -524,7 +528,8 @@ function renderItin(){
   if(p.completed.length||p.shifted)rows.push(`<li class="now"><span class="tm">${fmt(p.now)}</span><span class="rail"><span class="dot"></span></span><div class="body"><div class="nm">You are here</div><div class="meta">${p.shifted?"Running behind the original plan":"Re-planning from this point"}</div></div></li>`);
   p.stops.forEach((st,i)=>{rows.push(legRow(st.leg,false));const k=p.completed.length+i;if(heads.has(k))rows.push(zoneRow(heads.get(k),false));rows.push(stn(st,++n));});
   rows.push(legRow(p.back,false));
-  rows.push(`<li class="term"><span class="tm">${fmt(p.end)}</span><span class="rail"><span class="dot">H</span></span><div class="body"><div class="nm">Back at ${esc(p.hotel.name)}</div><div class="meta">${p.deadline-p.end>0?`${hm(p.deadline-p.end)} to spare`:"Right on time"}</div></div></li>`);
+  const endsAtStart=p.end_location.lat===p.hotel.lat&&p.end_location.lng===p.hotel.lng;
+  rows.push(`<li class="term"><span class="tm">${fmt(p.end)}</span><span class="rail"><span class="dot">${endsAtStart?"H":"E"}</span></span><div class="body"><div class="nm">Finish at ${esc(p.end_location.name)}</div><div class="meta">${p.deadline-p.end>0?`${hm(p.deadline-p.end)} to spare`:"Right on time"}</div></div></li>`);
   $("#itin").innerHTML=rows.join("");
   const sm=p.summary;
   $("#summary").innerHTML=`<strong>${sm.stops} stops</strong>${p.blocks.length?` in ${sm.zones} neighborhood${sm.zones>1?"s":""}`:""}, ${sm.walk_km.toFixed(1)} km walking, ${hm(sm.moving)} getting around. ${MODE_TXT[p.trip.getting_around]}, ${esc(p.trip.pace)} pace.`;
@@ -558,7 +563,7 @@ function legsOf(p){
   const legs=[];let prev=p.hotel;
   p.completed.forEach(st=>{legs.push({path:legPath(prev,st,st.leg),mode:st.leg.mode,done:true});prev=st;});
   p.stops.forEach(st=>{legs.push({path:legPath(prev,st,st.leg),mode:st.leg.mode,done:false});prev=st;});
-  legs.push({path:legPath(prev,p.hotel,p.back),mode:p.back.mode,done:false});
+  legs.push({path:legPath(prev,p.end_location,p.back),mode:p.back.mode,done:false});
   return legs;
 }
 const MapView={
@@ -588,12 +593,13 @@ const MapView={
     const add=(pos,el,title,z)=>{this.overlays.push(new AdvancedMarkerElement({map:this.map,position:pos,content:el,title,zIndex:z}));bounds.extend(pos);};
     p.others.forEach(o=>add({lat:o.lat,lng:o.lng},this.pin("other"),o.name,1));
     add({lat:p.hotel.lat,lng:p.hotel.lng},this.pin("hotel","H"),p.hotel.name,5);
+    if(p.end_location.lat!==p.hotel.lat||p.end_location.lng!==p.hotel.lng)add({lat:p.end_location.lat,lng:p.end_location.lng},this.pin("hotel","E"),p.end_location.name,6);
     let n=0;p.completed.concat(p.stops).forEach(st=>add({lat:st.lat,lng:st.lng},this.pin(st.done?"done":st.new?"new":"",st.done?"✓":String(++n)),st.name,10));
     if(p.completed.length||p.shifted){const at=p.completed.length?p.completed[p.completed.length-1]:p.hotel;add({lat:at.lat,lng:at.lng},this.pin("here"),"You are here",20);}
     this.map.fitBounds(bounds,48);
   },
   drawSvg(p){
-    const pts=[p.hotel,...p.completed,...p.stops,...p.others].map(q=>[q.lat,q.lng]);
+    const pts=[p.hotel,p.end_location,...p.completed,...p.stops,...p.others].map(q=>[q.lat,q.lng]);
     legsOf(p).forEach(l=>pts.push(...l.path));
     let minLat=Math.min(...pts.map(q=>q[0])),maxLat=Math.max(...pts.map(q=>q[0])),minLng=Math.min(...pts.map(q=>q[1])),maxLng=Math.max(...pts.map(q=>q[1]));
     const kx=Math.cos((minLat+maxLat)/2*Math.PI/180),padLat=(maxLat-minLat)*.08+.002,padLng=(maxLng-minLng)*.08+.002/kx;
@@ -606,6 +612,7 @@ const MapView={
     p.others.forEach(o=>{const [x,y]=P(o.lat,o.lng);h+=`<circle cx="${x}" cy="${y}" r="5" fill="var(--muted)" opacity=".5"><title>${esc(o.name)}</title></circle>`;});
     legsOf(p).forEach(l=>{h+=`<polyline points="${l.path.map(q=>P(q[0],q[1]).join(",")).join(" ")}" fill="none" stroke="${col[l.mode]}" stroke-width="${l.mode==="walk"?5:4.5}" stroke-linecap="round" stroke-linejoin="round"${l.mode==="walk"?' stroke-dasharray="0.5 9"':""} opacity="${l.done?.3:.95}"/>`;});
     {const [x,y]=P(p.hotel.lat,p.hotel.lng);h+=`<rect x="${x-12}" y="${y-12}" width="24" height="24" rx="5" fill="var(--ink)"/><text x="${x}" y="${+y+4.5}" text-anchor="middle" style="font:800 13px var(--sans);fill:var(--panel)">H</text>`;}
+    if(p.end_location.lat!==p.hotel.lat||p.end_location.lng!==p.hotel.lng){const [x,y]=P(p.end_location.lat,p.end_location.lng);h+=`<rect x="${x-12}" y="${y-12}" width="24" height="24" rx="5" fill="var(--ink)"/><text x="${x}" y="${+y+4.5}" text-anchor="middle" style="font:800 13px var(--sans);fill:var(--panel)">E</text>`;}
     let n=0;p.completed.concat(p.stops).forEach(st=>{const [x,y]=P(st.lat,st.lng);
       h+=`<g><title>${esc(st.name)}</title><circle cx="${x}" cy="${y}" r="13" fill="${st.done?"var(--muted)":"var(--panel)"}" stroke="${st.new?"var(--gold)":st.done?"var(--muted)":"var(--ink)"}" stroke-width="3.5"/><text x="${x}" y="${+y+4.5}" text-anchor="middle" style="font:800 12.5px var(--sans);fill:${st.done?"var(--panel)":"var(--ink)"}">${st.done?"✓":++n}</text></g>`;});
     if(p.completed.length||p.shifted){const at=p.completed.length?p.completed[p.completed.length-1]:p.hotel;const [x,y]=P(at.lat,at.lng);h+=`<circle cx="${+x+13}" cy="${y-13}" r="7" fill="var(--gold)" stroke="var(--panel)" stroke-width="2"/>`;}
