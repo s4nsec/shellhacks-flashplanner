@@ -87,7 +87,9 @@ You need Python 3.10 or newer.
   like `/api/plan`. `client_time` (ISO 8601) and `lat`/`lng` are optional; see
   "Live day" below.
 
-Plans are kept in memory, so restarting the server clears them.
+Plans are cached in memory and backed by SQLite recipes. After a restart, the
+server rebuilds a requested plan with fresh API calls and replays its live-day
+actions. Set `SESSION_DB_PATH` to move the database (default: `sessions.sqlite3`).
 
 ## Tuning
 
@@ -125,8 +127,10 @@ Transit matrices allow 100 pairs per request; `routes.matrix()` batches them.
 
 - **Terms.** The Maps Platform terms limit how long you can store Places
   content and require attribution when showing it. This app keeps place data
-  and reviews in memory for the session only, shows reviewer names on quotes,
-  and credits Google Maps under the itinerary.
+  and reviews in memory only. Its SQLite store contains the user's original
+  trip settings and action log—not Places responses—then refetches data when
+  restoring a session. Reviewer names are shown on quotes, and Google Maps is
+  credited under the itinerary.
 - **Reviews.** Places API returns at most 5 reviews per place. When none mention
   visit time, Gemini estimates from what it knows, and the itinerary says so.
 - **Weather.** The Weather API forecast starts at the current hour and covers

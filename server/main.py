@@ -19,7 +19,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 
-from . import config, gemini, places, planner, routes, weather
+from . import config, gemini, places, planner, routes, session_store, weather
 from .models import InterpretRequest, ParseRequest, ReplanRequest, TripRequest
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -31,6 +31,7 @@ SESSIONS: dict[str, planner.Session] = {}   # in memory, one per planned day
 SESSION_TOUCHED: dict[str, float] = {}
 SESSION_TTL_SECONDS = 6 * 60 * 60
 MAX_SESSIONS = 50
+RESTORE_LOCK = asyncio.Lock()
 SHORTLIST = 20        # places that get reviews, travel times and a place in the solver
 MAX_CANDIDATES = 40   # places Gemini scores
 MODE_API = {"walk": "WALK", "transit": "TRANSIT", "ride": "DRIVE"}
@@ -95,6 +96,7 @@ def evict_old_sessions(now: float | None = None) -> None:
     for sid in expired:
         SESSION_TOUCHED.pop(sid, None)
         SESSIONS.pop(sid, None)
+    session_store.purge_expired(SESSION_TTL_SECONDS, now)
     if len(SESSIONS) <= MAX_SESSIONS:
         return
     oldest = sorted(SESSION_TOUCHED, key=SESSION_TOUCHED.get)
@@ -109,12 +111,43 @@ def remember_session(s: planner.Session) -> None:
     evict_old_sessions()
 
 
-def get_session(session_id: str) -> planner.Session | None:
+async def get_session(session_id: str) -> planner.Session | None:
     evict_old_sessions()
     s = SESSIONS.get(session_id)
     if s:
         SESSION_TOUCHED[session_id] = time.time()
-    return s
+        session_store.touch(session_id)
+        return s
+    return await restore_session(session_id)
+
+
+async def restore_session(session_id: str) -> planner.Session | None:
+    """Rebuild an evicted/restarted session from its user-owned recipe."""
+    recipe = session_store.load(session_id, SESSION_TTL_SECONDS)
+    if not recipe:
+        return None
+    async with RESTORE_LOCK:
+        if session_id in SESSIONS:
+            return SESSIONS[session_id]
+        rebuilt_id = None
+        async for line in plan_stream(TripRequest.model_validate(recipe["trip"]), persist=False):
+            event = json.loads(line)
+            if event.get("type") == "error":
+                return None
+            if event.get("type") == "plan":
+                rebuilt_id = event["session_id"]
+        if not rebuilt_id or rebuilt_id not in SESSIONS:
+            return None
+        s = SESSIONS.pop(rebuilt_id)
+        SESSION_TOUCHED.pop(rebuilt_id, None)
+        s.id = session_id
+        remember_session(s)
+        for action in recipe["actions"]:
+            request = ReplanRequest(session_id=session_id, **action)
+            async for line in replan_stream(request, persist=False):
+                if json.loads(line).get("type") == "error":
+                    return None
+        return s
 
 
 # ---------- pages & config ----------
@@ -306,7 +339,7 @@ async def plan(req: TripRequest):
     return StreamingResponse(plan_stream(req), media_type="application/x-ndjson")
 
 
-async def plan_stream(req: TripRequest):
+async def plan_stream(req: TripRequest, persist: bool = True):
     msg = missing_keys_message()
     if msg:
         yield ev(type="error", message=msg)
@@ -588,6 +621,8 @@ async def plan_stream(req: TripRequest):
                 blocks_txt = f" Grouped into {nb} neighborhood block{'s' if nb > 1 else ''}."
             yield step_ok("solve", t0, f"Picked {len(s.route)} of {len(nodes)} places.{blocks_txt}")
             remember_session(s)
+            if persist:
+                session_store.save(s.id, trip)
 
             yield step_run("shapes", "Draw the real routes", "routes.computeRoutes(each leg)",
                            "server/routes.py: polyline()")
@@ -610,7 +645,7 @@ async def plan_stream(req: TripRequest):
 
 @app.post("/api/interpret")
 async def interpret(req: InterpretRequest):
-    s = get_session(req.session_id)
+    s = await get_session(req.session_id)
     if not s:
         raise HTTPException(404, "That plan has expired. Plan the day again.")
     nxt = s.cand(s.route[0]).name if s.route else None
@@ -649,8 +684,8 @@ async def replan(req: ReplanRequest):
     return StreamingResponse(replan_stream(req), media_type="application/x-ndjson")
 
 
-async def replan_stream(req: ReplanRequest):
-    s = get_session(req.session_id)
+async def replan_stream(req: ReplanRequest, persist: bool = True):
+    s = await get_session(req.session_id)
     if not s:
         yield ev(type="error", message="That plan has expired. Plan the day again.")
         return
@@ -672,6 +707,8 @@ async def replan_stream(req: ReplanRequest):
                 s.weather_slot = dict(s.initial_weather_slot)
                 all_nodes = list(range(1, len(s.cands) + 1))
                 cuts = planner.cut_reasons(s, all_nodes, s.route, s.now)
+                if persist:
+                    _persist_action(req)
                 yield ev(type="plan", **_payload(s, "Back to the start of the day. " + await _story(s, cuts), cuts))
                 return
             node = next((k for k, c in enumerate(s.cands, 1) if c.id == req.place_id), None)
@@ -689,6 +726,8 @@ async def replan_stream(req: ReplanRequest):
                 s.changed, s.dropped = set(), []
                 yield ev(type="step", key=req.event, status="ok", title="Nothing to re-plan",
                          result=story, fresh=True)
+                if persist:
+                    _persist_action(req)
                 yield ev(type="plan", **_payload(s, story, planner.cut_reasons(s, nodes, s.route, s.now)))
                 return
             if req.event == "done":
@@ -716,6 +755,8 @@ async def replan_stream(req: ReplanRequest):
                               else f"You finished at {fmt(s.now)} by your clock, and the rest of the plan still fits.")
                     yield ev(type="step", key="done", status="ok", title="Nothing to re-plan",
                              result=result, fresh=True)
+                    if persist:
+                        _persist_action(req)
                     yield ev(type="plan", **_payload(s, story, planner.cut_reasons(s, nodes, s.route, s.now)))
                     return
 
@@ -786,9 +827,18 @@ async def replan_stream(req: ReplanRequest):
             except Exception:  # noqa: BLE001
                 story = _fallback_change(facts)
             yield step_ok("narrate", t0, "Wrote what changed and why.")
+            if persist:
+                _persist_action(req)
             yield ev(type="plan", **_payload(s, story, planner.cut_reasons(s, nodes, s.route, s.now)))
     except Exception as e:  # noqa: BLE001
         yield ev(type="error", message=explain_error(e))
+
+
+def _persist_action(req: ReplanRequest) -> None:
+    session_store.append_action(
+        req.session_id,
+        req.model_dump(mode="json", exclude={"session_id"}),
+    )
 
 
 # ---------- building the response ----------
