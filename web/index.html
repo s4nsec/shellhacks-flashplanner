@@ -52,7 +52,7 @@ a{color:var(--blue)}
 @media (max-width:1180px){.grid{grid-template-columns:330px minmax(0,1fr)}.col-l{grid-row:1 / span 2}}
 @media (max-width:760px){
   .grid{display:flex;flex-direction:column}.col{display:contents}
-  #tripForm{order:1}.story{order:2}.mapwrap{order:3}.itin{order:4}.compare{order:5}.tracep{order:6}
+  #tripForm{order:1}.story{order:2}.mapwrap{order:3}.itin{order:4}.tracep{order:6}
 }
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:1.1rem}
 .panelhead{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;margin-bottom:.75rem}
@@ -141,21 +141,6 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
 .pin.hotel{border-radius:6px;background:var(--ink);color:var(--panel)}
 .pin.other{width:10px;height:10px;border:0;background:#8a98a4;opacity:.7;box-shadow:none}
 .pin.here{width:18px;height:18px;border:3px solid #fff;background:var(--gold)}
-
-.compare h2{margin-bottom:.35rem}
-.compare p{margin:0 0 .8rem;color:var(--muted);font-size:.88rem}
-.ridecompare{margin-top:1rem;padding-top:1rem;border-top:1px solid var(--line)}
-.ridecompare h3{margin:0 0 .35rem;font-size:1rem}.ridecompare .cards{display:grid;grid-template-columns:1fr 1fr;gap:.55rem;margin:.65rem 0}
-.ridecompare .card{padding:.7rem;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
-.ridecompare .card b,.ridecompare .card span{display:block}.ridecompare .card span{color:var(--muted);font-size:.82rem;margin-top:.2rem}
-.bars{display:grid;grid-template-columns:auto 1fr;gap:.55rem .8rem;align-items:center;font-size:.85rem}
-.bars .nm{font-weight:600}.bars .nm small{display:block;font-weight:400;color:var(--muted)}
-.bar{display:flex;height:22px;border-radius:6px;overflow:hidden;background:var(--land);border:1px solid var(--line)}
-.bar span{display:block;height:100%}
-.bar .see{background:var(--blue)}.bar .move{background:var(--muted);opacity:.55}
-.bar .waitb{background:repeating-linear-gradient(45deg,var(--gold) 0 4px,transparent 4px 8px)}
-.keys{display:flex;flex-wrap:wrap;gap:.3rem 1rem;font-size:.78rem;color:var(--muted);margin-top:.6rem}
-.keys i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:.3rem;vertical-align:-1px}
 
 #summary{font-size:.88rem;color:var(--muted);margin:-.3rem 0 .9rem}
 #summary strong{color:var(--ink)}
@@ -344,18 +329,6 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
         <span><i class="lr"></i>Ride</span>
         <span class="note" id="mapNote"></span>
       </div>
-    </section>
-
-    <section class="panel compare" id="compare" hidden aria-labelledby="h-cmp">
-      <h2 id="h-cmp">Why ordering matters</h2>
-      <p>Same places, same hours. FlashPlanner versus visiting Google's "top attractions" list in its own order.</p>
-      <div class="bars" id="bars"></div>
-      <div class="keys">
-        <span><i style="background:var(--blue)"></i>Sightseeing</span>
-        <span><i style="background:var(--muted);opacity:.55"></i>Getting around</span>
-        <span><i style="background:repeating-linear-gradient(45deg,var(--gold) 0 3px,transparent 3px 6px)"></i>Waiting to start (not open yet, early for a meal or booking, rain)</span>
-      </div>
-      <div class="ridecompare" id="rideCompare" hidden></div>
     </section>
   </div>
 
@@ -710,7 +683,7 @@ function handleEvent(e){
 /* ============ rendering ============ */
 function renderAll(){
   setStory(S.plan.story||"");
-  renderDayTabs();renderItin();renderCompare();MapView.draw(S.plan);
+  renderDayTabs();renderItin();MapView.draw(S.plan);
   const maps=$("#mapsBtn"),stops=planStops(S.plan);
   maps.href=googleMapsUrl(S.plan);maps.setAttribute("aria-disabled","false");
   maps.title=stops.length>9?"Google Maps supports up to 9 waypoints; this link includes the first 9.":"Open this route in Google Maps";
@@ -783,19 +756,6 @@ function renderItin(){
   if(p.cuts.length)cuts+=`<details class="cuts"><summary>${p.cuts.length} places left out, and why</summary><ul>${p.cuts.map(c=>`<li>${S.sid?`<button class="putback" data-id="${esc(c.id)}"${NO_PUTBACK.includes(c.why)?" disabled":""}>Put it back</button>`:""}${esc(c.name)}<span>${esc(c.why)}</span></li>`).join("")}</ul></details>`;
   cuts+=`<p class="attrib">Places, ratings and reviews from Google Maps. Travel times from the Google Routes API.</p>`;
   $("#cuts").innerHTML=cuts;
-}
-function renderCompare(){
-  const c=S.plan.compare,r=S.plan.ride_compare,box=$("#compare"),ride=$("#rideCompare");
-  if((!c||!c.plan||!c.naive)&&!r){box.hidden=true;return;}
-  box.hidden=false;
-  if(c&&c.plan&&c.naive){
-    const pct=v=>Math.max(0,v/c.window*100).toFixed(2)+"%";
-    const row=(label,x)=>`<div class="nm">${label}<small>${x.stops} stops, ${hm(x.travel)} moving</small></div><div class="bar" role="img" aria-label="${label}: ${hm(x.see)} sightseeing, ${hm(x.travel)} getting around, ${hm(x.waited)} waiting"><span class="see" style="width:${pct(x.see)}"></span><span class="move" style="width:${pct(x.travel)}"></span><span class="waitb" style="width:${pct(x.waited)}"></span></div>`;
-    $("#bars").innerHTML=row("FlashPlanner",c.plan)+row("List order",c.naive);
-  }
-  ride.hidden=!r;if(!r)return;
-  const cv=r.coverage,tf=r.transit.minutes==null?"Unavailable":hm(r.transit.minutes);
-  ride.innerHTML=`<h3>Ride versus transit</h3><p><a href="${esc(cv.source)}" target="_blank" rel="noopener">${esc(cv.text)}</a>${cv.access?` (${esc(cv.access)})`:""}.</p><div class="cards"><div class="card"><b>Ride · ${hm(r.ride.minutes)}</b><span>Est. $${r.ride.fare_low.toFixed(0)}–$${r.ride.fare_high.toFixed(0)} total</span></div><div class="card"><b>Transit · ${tf}</b><span>Est. $${r.transit.fare_estimate.toFixed(0)} total</span></div></div><p>${esc(r.note)}</p>`;
 }
 function itineraryText(p){
   const lines=[
