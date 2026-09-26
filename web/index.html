@@ -85,9 +85,10 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
 .ev b{display:block;font-size:.9rem}
 .ev span{color:var(--muted);font-size:.78rem}
 .ev:disabled{opacity:.45;cursor:not-allowed}
-.latepick{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.5rem;align-items:center;margin-top:.65rem;font-size:.84rem;color:var(--muted)}
+.latepick{display:grid;grid-template-columns:auto minmax(0,1fr) 4.5rem;gap:.6rem;align-items:center;margin-top:.65rem;font-size:.84rem;color:var(--muted)}
 .latepick label{margin:0;color:var(--muted)}
-.latepick select{padding:.42rem .55rem;border-radius:9px}
+.latepick input[type="range"]{width:100%;margin:0;accent-color:var(--blue)}
+.latepick output{text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
 .say{display:flex;gap:.45rem;margin-top:.7rem}
 .say button{border:0;border-radius:10px;background:var(--ink);color:var(--panel);font-weight:600;padding:0 .9rem;cursor:pointer;white-space:nowrap}
 .say button:disabled{opacity:.45;cursor:not-allowed}
@@ -285,11 +286,8 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
       </div>
       <div class="latepick">
         <label for="lateDelay">Late by</label>
-        <select id="lateDelay" disabled>
-          <option value="15">15 minutes</option>
-          <option value="30" selected>30 minutes</option>
-          <option value="60">60 minutes</option>
-        </select>
+        <input id="lateDelay" type="range" min="5" max="120" step="5" value="30" aria-valuetext="30 minutes" disabled>
+        <output id="lateDelayValue" for="lateDelay">30 min</output>
       </div>
       <label for="sayText">Or say what happened</label>
       <div class="say">
@@ -455,7 +453,7 @@ async function planDay(){
   }catch(err){failRunning();setStory(err.message,true);}
   finally{setBusy(false);}
 }
-async function replan(event,delay=40,preStep=null){
+async function replan(event,delay=30,preStep=null){
   if(S.busy||!S.sid)return;setBusy(true);traceReset();
   try{
     if(preStep)traceStep(preStep);
@@ -648,9 +646,14 @@ function loadGoogleMaps(key){
 })();
 $("#planBtn").addEventListener("click",planDay);
 $$(".ev").forEach(b=>b.addEventListener("click",()=>{
-  const delay=b.dataset.ev==="late"?Number($("#lateDelay").value)||30:40;
+  const delay=b.dataset.ev==="late"?Number($("#lateDelay").value)||30:30;
   replan(b.dataset.ev,delay);
 }));
+$("#lateDelay").addEventListener("input",e=>{
+  const minutes=Number(e.target.value)||30;
+  $("#lateDelayValue").value=`${minutes} min`;
+  e.target.setAttribute("aria-valuetext",`${minutes} minutes`);
+});
 $("#sayBtn").addEventListener("click",sayWhatHappened);
 $("#sayText").addEventListener("keydown",e=>{if(e.key==="Enter")sayWhatHappened();});
 </script>
