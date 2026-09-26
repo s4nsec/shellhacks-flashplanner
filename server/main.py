@@ -762,7 +762,7 @@ def _log_itinerary(s, res):
             lines.append(f"  [{label}] {fmt(st['begin'])}-{fmt(st['leave'])} {c.name} | kind={c.kind} score={c.score} "
                          f"must={c.must} zone={c.zone_name} notes={st['notes']} "
                          f"leg={st['leg']['mode']} {st['leg']['min']}min | {c.reason}")
-    lines.append(f"  finish at {s.end_location['name']} {fmt(res['end'])}")
+    lines.append(f"  at {s.end_location['name']} by {fmt(res['end'])}")
     log.info("\n".join(lines))
 
 
