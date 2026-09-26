@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -10,10 +10,12 @@
 <style>
 :root{
   box-sizing:border-box;
+  color-scheme:light;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
   --paper:#E7ECEF; --panel:#FFFFFF; --ink:#12212E; --muted:#5A6A77; --line:#D2DBE1;
   --blue:#1D5BD8; --green:#0E8A55; --violet:#7B4BD6; --gold:#D99500; --goldsoft:#FFF1CC;
+  --on-blue:#FFFFFF;
   --land:#F6F8F9; --rain:#4F7394; --codebg:#F1F4F6; --bad:#B42318; --badsoft:#FEE4E2;
   --sans:"Archivo",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
@@ -21,14 +23,18 @@
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
+    color-scheme:dark;
     --paper:#0E171F; --panel:#15212B; --ink:#E5ECF1; --muted:#93A3B0; --line:#293945;
     --blue:#6A97F2; --green:#3DBE84; --violet:#A98AF2; --gold:#F2B632; --goldsoft:#3A3014;
+    --on-blue:#08111A;
     --land:#1A2731; --rain:#8FB0CF; --codebg:#0F1920; --bad:#FDA29B; --badsoft:#3A1A17;
   }
 }
 :root[data-theme="dark"]{
+  color-scheme:dark;
   --paper:#0E171F; --panel:#15212B; --ink:#E5ECF1; --muted:#93A3B0; --line:#293945;
   --blue:#6A97F2; --green:#3DBE84; --violet:#A98AF2; --gold:#F2B632; --goldsoft:#3A3014;
+  --on-blue:#08111A;
   --land:#1A2731; --rain:#8FB0CF; --codebg:#0F1920; --bad:#FDA29B; --badsoft:#3A1A17;
 }
 *,*::before,*::after{box-sizing:inherit}
@@ -86,7 +92,7 @@ textarea{resize:vertical}
 fieldset{border:0;padding:0;margin:0}
 .chips{display:flex;flex-wrap:wrap;gap:.4rem}
 .chip{border:1px solid var(--line);background:var(--land);border-radius:999px;padding:.3rem .7rem;font-size:.85rem;cursor:pointer}
-.chip[data-state=like]{background:var(--blue);border-color:var(--blue);color:#fff}
+.chip[data-state=like]{background:var(--blue);border-color:var(--blue);color:var(--on-blue)}
 .chip[data-state=like]::before{content:"♥ "}
 .chip[data-state=skip]{text-decoration:line-through;color:var(--muted);border-style:dashed}
 #moreInterests{margin-top:.5rem}
@@ -100,7 +106,7 @@ details.more{margin-top:.9rem;border-top:1px solid var(--line);padding-top:.7rem
 details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
 .actions{display:grid;grid-template-columns:1fr auto;gap:.55rem;margin-top:1.1rem}
 .primary,.secondary{border:0;border-radius:12px;font-weight:700;font-stretch:110%;font-size:1rem;padding:.8rem;cursor:pointer}
-.primary{background:var(--blue);color:#fff}
+.primary{background:var(--blue);color:var(--on-blue)}
 .primary:disabled{opacity:.6;cursor:progress}
 .secondary{background:var(--land);border:1px solid var(--line);color:var(--ink);white-space:nowrap}
 .secondary:disabled{opacity:.6;cursor:progress}
@@ -194,160 +200,389 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
 #itin .lock.on{border-color:var(--ink);font-weight:600}
 .dropped{color:var(--rain);font-size:.84rem;margin:.6rem 0 0}
 .attrib{font-size:.76rem;color:var(--muted);margin:.8rem 0 0}
+
+/* ============ route-story experience ============ */
+[hidden]{display:none!important}
+body{
+  min-height:100vh;
+  background:
+    linear-gradient(var(--line) 1px,transparent 1px),
+    linear-gradient(90deg,var(--line) 1px,transparent 1px),
+    var(--paper);
+  background-size:48px 48px;
+  background-attachment:fixed;
+}
+body::before{content:"";position:fixed;inset:0;z-index:-1;background:var(--paper);opacity:.88}
+.top{max-width:1480px;margin:auto;padding:1rem;flex-wrap:nowrap}
+.brand{color:var(--ink);text-decoration:none;font-size:1.15rem;font-weight:800;font-stretch:120%}
+.brand span{letter-spacing:-.03em}
+.top #status{max-width:54vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-shell{width:min(100%,1480px);margin:0 auto;padding:0 1rem calc(2rem + env(safe-area-inset-bottom,0px))}
+.view{animation:view-in .38s ease both}
+@keyframes view-in{from{opacity:0;transform:translateY(8px)}}
+.eyebrow{margin:0 0 .55rem;text-transform:uppercase;letter-spacing:.13em;font-size:.73rem;font-weight:800;color:var(--blue)}
+.setup-hero{padding:clamp(2.5rem,9vw,6rem) 0 2.25rem;max-width:760px}
+.setup-hero h1,.loading-shell h1,.results-hero h1{
+  margin:0;font-size:clamp(3.2rem,15vw,7.5rem);line-height:.82;letter-spacing:-.075em;font-stretch:125%;font-weight:800;
+}
+.setup-hero h1 em,.loading-shell h1 em,.results-hero h1 em{font-family:var(--serif);font-weight:400;color:var(--blue)}
+.setup-hero>p:last-child{max-width:54ch;margin:1.35rem 0 0;color:var(--muted);font-family:var(--serif);font-size:1.08rem}
+.setup-layout{display:grid;gap:1rem;align-items:start}
+.panel{border-radius:12px;box-shadow:none}
+.trip-form{padding:0;overflow:visible}
+.form-intro{display:flex;gap:1rem;padding:1.25rem;border-bottom:1px solid var(--line);align-items:flex-start}
+.form-intro h2{font-size:1.35rem;margin:0}
+.form-intro p{margin:.15rem 0 0;color:var(--muted);font-size:.85rem}
+.step-no{display:grid;place-items:center;flex:none;width:2.5rem;height:2.5rem;background:var(--ink);color:var(--panel);font-size:.78rem;font-weight:800;border-radius:50%}
+.form-section{padding:1.25rem;border-bottom:1px solid var(--line)}
+.form-section h3{margin:0 0 .2rem;font-size:.75rem;letter-spacing:.12em;text-transform:uppercase;color:var(--blue)}
+.form-section label,.form-section .lbl{margin-top:1rem}
+textarea,select,input[type=time],input[type=date],input[type=text],input[type=number]{
+  min-height:50px;border:1.5px solid var(--line);border-radius:8px;padding:.72rem .8rem;background-color:var(--land);
+  transition:border-color .16s ease,box-shadow .16s ease,background-color .16s ease;
+}
+textarea{min-height:auto}
+.form-section input:hover,.form-section select:hover,.form-section textarea:hover{border-color:color-mix(in srgb,var(--muted) 65%,var(--line))}
+.form-section input:focus,.form-section select:focus,.form-section textarea:focus{
+  border-color:var(--blue);background-color:var(--panel);box-shadow:0 0 0 3px color-mix(in srgb,var(--blue) 18%,transparent);outline:0;
+}
+.form-section input[aria-invalid=true]{border-color:var(--bad);box-shadow:0 0 0 3px color-mix(in srgb,var(--bad) 14%,transparent)}
+select{
+  appearance:none;
+  padding-right:2.75rem;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='m4 6 4 4 4-4' stroke='%2312212E' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right .9rem center;background-size:1rem;cursor:pointer;
+}
+input[type=date],input[type=time]{font-variant-numeric:tabular-nums;cursor:pointer}
+input[type=date]::-webkit-calendar-picker-indicator,input[type=time]::-webkit-calendar-picker-indicator{
+  width:1.15rem;height:1.15rem;margin:-.25rem;padding:.45rem;border-radius:6px;background-color:var(--panel);cursor:pointer;opacity:.78;
+}
+input[type=date]:hover::-webkit-calendar-picker-indicator,input[type=time]:hover::-webkit-calendar-picker-indicator{opacity:1}
+input[type=number]{font-variant-numeric:tabular-nums}
+input[type=number]::-webkit-inner-spin-button{width:1.25rem;height:1.75rem;opacity:.55;cursor:pointer}
+.ac-list{
+  max-height:min(19rem,55vh);overflow-y:auto;padding:.4rem;border:1.5px solid var(--line);border-radius:9px;
+  box-shadow:0 16px 40px rgba(0,0,0,.18);
+}
+.ac-list [role=option]{min-height:52px;justify-content:center;padding:.55rem .65rem}
+.ac-list [role=option]+[role=option]{border-top:1px solid var(--line)}
+.ac-list [role=option][aria-selected=true],.ac-list [role=option]:hover{background:color-mix(in srgb,var(--blue) 11%,var(--land))}
+.ac-list [role=option] b{font-size:.9rem}.ac-list [role=option] small{margin-top:.05rem}
+.picked{padding-left:.15rem}
+.row2{grid-template-columns:1fr;gap:0}
+.seg{border-radius:8px}
+.seg button{min-height:48px;padding:.6rem .35rem}
+.chips{gap:.5rem}
+.chip{min-height:42px;border-radius:7px;padding:.5rem .7rem;font-weight:600}
+.chip[data-state=like]{box-shadow:inset 0 -3px rgba(0,0,0,.18)}
+.check{min-height:48px;padding:.55rem .65rem;border:1px solid var(--line);border-radius:7px;background:var(--land)}
+.check input{width:1.15rem;height:1.15rem}
+details.more{margin-top:1.25rem;padding-top:1rem}
+details.more summary{min-height:44px;display:flex;align-items:center;color:var(--blue)}
+.actions{margin:0;padding:1rem;grid-template-columns:minmax(0,1fr) 5.5rem}
+.primary,.secondary{min-height:50px;border-radius:8px}
+.primary{display:flex;align-items:center;justify-content:space-between;padding-inline:1rem}
+.primary span{font-size:1.5rem;line-height:0}
+#demoBtn{padding-inline:.7rem;font-size:.82rem}
+.form-error{margin:0;padding:.75rem 1rem 0;color:var(--bad);font-size:.86rem;font-weight:700}
+.form-error a{color:inherit}
+.setup-actions{position:sticky;z-index:20;bottom:0;background:color-mix(in srgb,var(--panel) 94%,transparent);backdrop-filter:blur(10px);border-radius:0 0 12px 12px;padding-bottom:calc(1rem + env(safe-area-inset-bottom,0px))}
+.trip-ticket{display:none;background:var(--blue);color:#fff;padding:1.25rem;border-radius:12px;position:sticky;top:1rem;overflow:hidden}
+.trip-ticket::after{content:"";position:absolute;width:130px;height:130px;border:24px solid rgba(255,255,255,.1);border-radius:50%;right:-50px;bottom:-55px}
+.ticket-top{display:flex;justify-content:space-between;padding-bottom:1rem;border-bottom:1px dashed rgba(255,255,255,.45);font-size:.68rem;letter-spacing:.13em;font-weight:800}
+.ticket-label{margin:1.4rem 0 .2rem;opacity:.72;font-size:.75rem;text-transform:uppercase;letter-spacing:.1em}
+.trip-ticket>strong{font-size:1.75rem;line-height:1.05}
+.ticket-route{display:grid;grid-template-columns:auto 1fr auto;align-items:center;margin:1.5rem 0}
+.ticket-route i{width:13px;height:13px;border:3px solid #fff;border-radius:50%}.ticket-route span{border-top:3px dotted rgba(255,255,255,.7)}
+.ticket-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.ticket-grid span{display:block;opacity:.72;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em}.ticket-grid b{display:block;margin-top:.2rem}
+.ticket-vibe{font-family:var(--serif);margin:1.25rem 0}.trip-ticket small{display:block;max-width:28ch;opacity:.72}
+
+.loading-view{min-height:calc(100vh - 86px);padding:7vh 0 2rem}
+.loading-shell{text-align:center;max-width:760px;margin:0 auto}
+.loading-shell h1{font-size:clamp(3rem,13vw,6.5rem)}
+.route-loader{position:relative;margin:2.75rem auto 1.25rem;max-width:620px}
+.route-loader svg{display:block;width:100%;overflow:visible}
+.route-base,.route-live{fill:none;stroke-linecap:round;stroke-width:5}
+.route-base{stroke:var(--line)}.route-live{stroke:var(--blue);stroke-dasharray:16 14;animation:route-dash 1.2s linear infinite}
+@keyframes route-dash{to{stroke-dashoffset:-30}}
+.loading-view.has-error .route-live{stroke:var(--bad);animation:none}
+.load-dot{position:absolute;width:16px;height:16px;background:var(--gold);border:4px solid var(--panel);border-radius:50%;box-shadow:0 0 0 2px var(--ink)}
+.load-dot.d1{left:0;bottom:17%}.load-dot.d2{left:42%;top:36%}.load-dot.d3{right:0;top:4%}
+.loading-summary{font-family:var(--serif);font-size:1.08rem;color:var(--muted);min-height:3rem}
+.text-btn{border:0;background:none;color:var(--blue);font-weight:700;text-decoration:underline;text-underline-offset:3px;min-height:44px;cursor:pointer}
+.text-btn:disabled{opacity:.35;cursor:not-allowed}
+#tracePanel{margin:2rem auto 0;max-width:760px}
+#loadingTraceSlot #tracePanel{background:transparent}
+#tracePanel h2{font-size:.75rem;letter-spacing:.11em;text-transform:uppercase}
+#trace li{padding-bottom:1rem}
+
+.results-view{padding:2rem 0 3rem}
+.results-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;padding:clamp(1rem,5vw,4rem) 0 2rem}
+.results-hero h1{font-size:clamp(3rem,12vw,7rem)}
+.edit-trip{flex:none;padding-inline:1rem}
+.story{background:var(--ink);color:var(--panel);padding:1.1rem;border-radius:10px;align-items:center}
+.story-mark{display:grid;place-items:center;flex:none;width:2.35rem;height:2.35rem;border:2px solid var(--gold);border-radius:50%;font-size:.65rem;font-weight:800;color:var(--gold)}
+#story{font-size:1rem;max-width:none}
+.story.error{background:var(--badsoft);color:var(--bad)}
+.result-toolbar{display:flex;flex-direction:column;gap:.75rem;padding:1rem 0 .5rem}
+.result-toolbar .day-tabs{margin:0}
+.export-actions{justify-content:flex-start}
+.smallbtn{min-height:38px;padding:.5rem .7rem;border-radius:7px}
+#summary{margin:.25rem 0 1rem;padding:.8rem 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.result-tabs{position:sticky;z-index:15;top:0;display:grid;grid-template-columns:1fr 1fr;padding:.4rem;background:var(--paper);border:1px solid var(--line);border-radius:9px;margin:0 0 .75rem}
+.result-tabs button{min-height:44px;border:0;background:transparent;border-radius:6px;font-weight:700;color:var(--muted)}
+.result-tabs button[aria-selected=true]{background:var(--ink);color:var(--panel)}
+.result-grid{display:grid;gap:.75rem}
+.result-pane{padding:.8rem}
+.result-pane.mobile-hidden{display:none}
+.map-kicker{font-size:.7rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700}
+#gmap{height:52vh;min-height:360px;max-height:620px}
+.itin{padding:1rem}
+.itin .panelhead{padding-bottom:.75rem;border-bottom:1px solid var(--line)}
+#itin>li{grid-template-columns:55px 24px minmax(0,1fr)}
+#itin .tm{font-size:.76rem}
+#itin .body{padding-bottom:.35rem}
+.behind-plan{margin-top:.75rem;padding:1rem}
+.behind-plan>summary{min-height:44px;display:flex;align-items:center;font-weight:800;cursor:pointer}
+.behind-plan>p{color:var(--muted);font-size:.85rem}
+.behind-plan #tracePanel{border:0;padding:0;margin:1rem 0 0}
+
+@media (min-width:560px){
+  .row2{grid-template-columns:1fr 1fr;gap:.75rem}
+  .align-end{align-items:end}
+  .result-toolbar{flex-direction:row;align-items:center;justify-content:space-between}
+  .export-actions{justify-content:flex-end}
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) select{
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='m4 6 4 4 4-4' stroke='%23E5ECF1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+}
+:root[data-theme="dark"] select{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='m4 6 4 4 4-4' stroke='%23E5ECF1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+@media (min-width:900px){
+  .top{padding:1.25rem 2rem}.app-shell{padding-inline:2rem}
+  .setup-layout{grid-template-columns:minmax(0,760px) minmax(280px,360px);gap:1.25rem}
+  .trip-ticket{display:block}
+  .form-section,.form-intro{padding:1.5rem}
+  .setup-actions{position:static}
+  .result-tabs{display:none}
+  .result-grid{grid-template-columns:minmax(0,1.2fr) minmax(380px,.8fr);align-items:start;gap:1rem}
+  .result-pane.mobile-hidden{display:block}
+  .mapwrap{position:sticky;top:1rem}
+  #gmap{height:min(680px,72vh)}
+  .story{padding:1.25rem 1.5rem}
+}
+@media (min-width:1200px){
+  .setup-layout{grid-template-columns:minmax(0,820px) 380px;gap:2rem}
+  .results-view{padding-inline:1rem}
+}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
 
 <header class="top">
-  <div class="brand">
-    <svg width="46" height="46" viewBox="0 0 46 46" aria-hidden="true">
-      <circle cx="23" cy="23" r="21" fill="none" stroke="var(--ink)" stroke-width="4"/>
+  <a class="brand" href="#" id="brandHome" aria-label="FlashPlanner home">
+    <svg width="42" height="42" viewBox="0 0 46 46" aria-hidden="true">
+      <circle cx="23" cy="23" r="21" fill="none" stroke="currentColor" stroke-width="4"/>
       <path d="M8 30 L18 16 L28 26 L38 12" fill="none" stroke="var(--blue)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-      <circle cx="18" cy="16" r="3.2" fill="var(--panel)" stroke="var(--ink)" stroke-width="2"/>
-      <circle cx="28" cy="26" r="3.2" fill="var(--panel)" stroke="var(--ink)" stroke-width="2"/>
-      <circle cx="38" cy="12" r="3.2" fill="var(--gold)" stroke="var(--ink)" stroke-width="2"/>
+      <circle cx="18" cy="16" r="3.2" fill="var(--panel)" stroke="currentColor" stroke-width="2"/>
+      <circle cx="28" cy="26" r="3.2" fill="var(--panel)" stroke="currentColor" stroke-width="2"/>
+      <circle cx="38" cy="12" r="3.2" fill="var(--gold)" stroke="currentColor" stroke-width="2"/>
     </svg>
-    <div>
-      <h1>FlashPlanner</h1>
-      <p>Tell it how long you have in a new city. It picks what's worth seeing and the order to see it in, then re-plans when the day changes.</p>
-    </div>
-  </div>
+    <span>FlashPlanner</span>
+  </a>
   <p id="status">Connecting to the server…</p>
 </header>
 
-<main class="grid">
-  <div class="col col-l">
-    <section class="panel" id="tripForm" aria-labelledby="h-trip">
-      <h2 id="h-trip">Your trip</h2>
-      <div class="ac"><label for="city">City</label><input type="text" id="city" placeholder="Montreal, Canada"
-        role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="cityList" aria-describedby="cityLive" autocomplete="off">
-        <ul id="cityList" class="ac-list" role="listbox" aria-label="Suggested cities" hidden></ul>
-        <p id="cityLive" class="sr-only" aria-live="polite"></p></div>
-      <label for="date">Date</label>
-      <input type="date" id="date">
-      <label for="days">Number of days</label>
-      <input type="number" id="days" min="1" max="7" value="1">
-      <div class="day-windows" id="dayWindows"></div>
-      <div class="row2">
-        <div class="ac"><label for="startLoc">Start at</label><input type="text" id="startLoc" placeholder="Hotel or address"
-          role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="startLocList" aria-describedby="startLocPicked" autocomplete="off">
-          <ul id="startLocList" class="ac-list" role="listbox" aria-label="Suggested places" hidden></ul>
-          <p id="startLocPicked" class="picked"></p>
-          <p id="startLocLive" class="sr-only" aria-live="polite"></p></div>
-        <div class="ac"><label for="endLoc">Finish at</label><input type="text" id="endLoc" placeholder="Station, airport, or hotel"
-          role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="endLocList" aria-describedby="endLocPicked" autocomplete="off">
-          <ul id="endLocList" class="ac-list" role="listbox" aria-label="Suggested finishing places" hidden></ul>
-          <p id="endLocPicked" class="picked"></p>
-          <p id="endLocLive" class="sr-only" aria-live="polite"></p></div>
-      </div>
-      <div class="row2">
-        <div><label for="tStart">Start</label><input type="time" id="tStart" value="10:00"></div>
-        <div><label for="tEnd">Finish by</label><input type="time" id="tEnd" value="19:00"></div>
-      </div>
+<main class="app-shell">
+  <section class="view setup-view" id="setupView" aria-labelledby="setupTitle">
+    <div class="setup-hero">
+      <p class="eyebrow">A city day, actually doable</p>
+      <h1 id="setupTitle">Go farther.<br><em>Backtrack less.</em></h1>
+      <p>Tell us your non-negotiables. We’ll read the reviews, watch the weather, and stitch together a route that fits.</p>
+    </div>
 
-      <fieldset>
-        <legend class="lbl">Interests <span class="hint">(tap once to love, twice to skip)</span></legend>
-        <div class="chips" id="chips"></div>
-        <label for="moreInterests" class="sr-only">Add an interest</label>
-        <input type="text" id="moreInterests" placeholder="Add an interest, e.g. jazz bars, bagels">
-      </fieldset>
-      <label for="mustSee">Must see</label>
-      <input type="text" id="mustSee" placeholder="Comma-separated place names">
-
-      <div class="row2">
-        <label class="check" for="wheelchair"><input type="checkbox" id="wheelchair">Wheelchair accessible</label>
-        <div><label for="diet">Dietary preference</label><select id="diet">
-          <option value="">None</option>
-          <option value="vegetarian">Vegetarian</option>
-          <option value="vegan">Vegan</option>
-        </select></div>
-      </div>
-
-      <fieldset>
-        <legend class="lbl">Getting around</legend>
-        <div class="seg" id="modeSeg">
-          <button type="button" data-mode="walk">Walk only</button>
-          <button type="button" data-mode="transit">Walk + transit</button>
-          <button type="button" data-mode="ride">Walk + ride</button>
+    <div class="setup-layout">
+      <section class="panel trip-form" id="tripForm" aria-labelledby="h-trip">
+        <div class="form-intro">
+          <span class="step-no">01</span>
+          <div><h2 id="h-trip">Build your route</h2><p>About a minute. Every choice stays editable.</p></div>
         </div>
-      </fieldset>
-      <fieldset>
-        <legend class="lbl">Route style</legend>
-        <div class="seg seg2" id="styleSeg">
-          <button type="button" data-blocks="0">Most stops</button>
-          <button type="button" data-blocks="1">By neighborhood</button>
+
+        <div class="form-section">
+          <h3>Where &amp; when</h3>
+          <div class="ac"><label for="city">City</label><input type="text" id="city" placeholder="Montreal, Canada"
+            role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="cityList" aria-describedby="cityLive" autocomplete="off">
+            <ul id="cityList" class="ac-list" role="listbox" aria-label="Suggested cities" hidden></ul>
+            <p id="cityLive" class="sr-only" aria-live="polite"></p></div>
+          <div class="row2">
+            <div><label for="date">First day</label><input type="date" id="date"></div>
+            <div><label for="days">Days</label><input type="number" id="days" min="1" max="7" value="1"></div>
+          </div>
+          <div class="day-windows" id="dayWindows"></div>
+          <div class="row2">
+            <div class="ac"><label for="startLoc">Start at</label><input type="text" id="startLoc" placeholder="Hotel or address"
+              role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="startLocList" aria-describedby="startLocPicked" autocomplete="off">
+              <ul id="startLocList" class="ac-list" role="listbox" aria-label="Suggested places" hidden></ul>
+              <p id="startLocPicked" class="picked"></p><p id="startLocLive" class="sr-only" aria-live="polite"></p></div>
+            <div class="ac"><label for="endLoc">Finish at</label><input type="text" id="endLoc" placeholder="Airport, hotel…"
+              role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="endLocList" aria-describedby="endLocPicked" autocomplete="off">
+              <ul id="endLocList" class="ac-list" role="listbox" aria-label="Suggested finishing places" hidden></ul>
+              <p id="endLocPicked" class="picked"></p><p id="endLocLive" class="sr-only" aria-live="polite"></p></div>
+          </div>
+          <div class="row2">
+            <div><label for="tStart">Start</label><input type="time" id="tStart" value="10:00"></div>
+            <div><label for="tEnd">Finish by</label><input type="time" id="tEnd" value="19:00"></div>
+          </div>
         </div>
-      </fieldset>
-      <label for="pace">Pace</label>
-      <select id="pace">
-        <option value="relaxed">Relaxed (linger longer)</option>
-        <option value="normal" selected>Normal</option>
-        <option value="packed">Packed (quick visits)</option>
-      </select>
-      <label for="budget">Budget</label>
-      <input type="number" id="budget" min="0" step="1" placeholder="No limit">
-      <p class="hint">Per person for tickets and meals, in the local currency.</p>
 
-      <details class="more">
-        <summary>Plan from a list you found online</summary>
-        <label for="userList">One place per line</label>
-        <textarea id="userList" rows="5" placeholder="Mount Royal&#10;Notre-Dame Basilica&#10;Jean-Talon Market"></textarea>
-        <p class="hint">When this has names, the plan uses only these places (plus your must-sees).</p>
-      </details>
-
-      <label for="msg">Anything else? <span class="hint">(optional)</span></label>
-      <textarea id="msg" rows="3" placeholder="Avoid steep hills, prefer quiet places, dinner booked at Joe Beef at 7:30pm"></textarea>
-      <p class="hint">Only for things the settings above don't cover. If this disagrees with them, the settings win.</p>
-
-      <div class="actions">
-        <button class="primary" id="planBtn" type="button">Plan my day</button>
-        <button class="secondary" id="demoBtn" type="button">Demo</button>
-      </div>
-    </section>
-
-    <section class="panel tracep" aria-labelledby="h-trace">
-      <h2 id="h-trace">What the agent did</h2>
-      <ol id="trace"><li class="empty">Each real API call shows up here as it runs.</li></ol>
-    </section>
-  </div>
-
-  <div class="col col-c">
-    <section class="panel story" id="storyBox" aria-live="polite">
-      <svg width="30" height="30" viewBox="0 0 46 46" aria-hidden="true">
-        <circle cx="23" cy="23" r="20" fill="var(--blue)"/>
-        <path d="M11 29 L19 18 L27 25 L35 14" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <p id="story">Describe your day and press Plan my day. Planning takes 15 to 30 seconds while the agent searches Google Maps, reads reviews, fetches travel times and optimizes the route.</p>
-    </section>
-
-    <section class="panel mapwrap" aria-label="Map of the plan">
-      <div id="gmap"></div>
-      <div class="legend">
-        <span><i class="lw"></i>Walk</span>
-        <span><i class="lt"></i>Transit</span>
-        <span><i class="lr"></i>Ride</span>
-        <span class="note" id="mapNote"></span>
-      </div>
-    </section>
-  </div>
-
-  <div class="col col-r">
-    <section class="panel itin" aria-labelledby="h-itin">
-      <div class="panelhead">
-        <h2 id="h-itin">Itinerary</h2>
-        <div class="export-actions" aria-label="Export itinerary">
-          <a class="smallbtn" id="mapsBtn" target="_blank" rel="noopener" aria-disabled="true">Maps</a>
-          <button class="smallbtn" id="icsBtn" type="button" title="Download .ics calendar" disabled>Calendar</button>
-          <button class="smallbtn" id="copyBtn" type="button" disabled>Copy</button>
+        <div class="form-section">
+          <h3>Your kind of day</h3>
+          <fieldset>
+            <legend class="lbl">Interests <span class="hint">tap once to love, twice to skip</span></legend>
+            <div class="chips" id="chips"></div>
+            <label for="moreInterests">Something else?</label>
+            <input type="text" id="moreInterests" placeholder="Jazz bars, bagels, brutalism…">
+          </fieldset>
+          <label for="mustSee">Must-see places</label>
+          <input type="text" id="mustSee" placeholder="Comma-separated place names">
+          <fieldset>
+            <legend class="lbl">Getting around</legend>
+            <div class="seg" id="modeSeg">
+              <button type="button" data-mode="walk">Walk only</button>
+              <button type="button" data-mode="transit">Walk + transit</button>
+              <button type="button" data-mode="ride">Walk + ride</button>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend class="lbl">Route style</legend>
+            <div class="seg seg2" id="styleSeg">
+              <button type="button" data-blocks="0">Most stops</button>
+              <button type="button" data-blocks="1">By neighborhood</button>
+            </div>
+          </fieldset>
         </div>
+
+        <div class="form-section">
+          <h3>Comfort &amp; constraints</h3>
+          <div class="row2">
+            <div><label for="pace">Pace</label><select id="pace">
+              <option value="relaxed">Relaxed</option><option value="normal" selected>Normal</option><option value="packed">Packed</option>
+            </select></div>
+            <div><label for="budget">Daily budget</label><input type="number" id="budget" min="0" step="1" placeholder="No limit"></div>
+          </div>
+          <p class="hint">Budget is per person for tickets and meals, in local currency.</p>
+          <div class="row2 align-end">
+            <label class="check"><input type="checkbox" id="wheelchair">Wheelchair accessible</label>
+            <div><label for="diet">Dietary preference</label><select id="diet">
+              <option value="">None</option><option value="vegetarian">Vegetarian</option><option value="vegan">Vegan</option>
+            </select></div>
+          </div>
+          <details class="more">
+            <summary>More ways to steer the route</summary>
+            <label for="userList">Plan only from a list you found online</label>
+            <textarea id="userList" rows="5" placeholder="Mount Royal&#10;Notre-Dame Basilica&#10;Jean-Talon Market"></textarea>
+            <p class="hint">One place per line. Must-sees are still included.</p>
+            <label for="msg">Anything else? <span class="hint">optional</span></label>
+            <textarea id="msg" rows="3" placeholder="Avoid steep hills, prefer quiet places, dinner booked at 7:30…"></textarea>
+            <p class="hint">Use this for bookings or details the settings don’t cover.</p>
+          </details>
+        </div>
+
+        <p class="form-error" id="formError" role="alert" hidden></p>
+        <div class="actions setup-actions">
+          <button class="primary" id="planBtn" type="button">Build route <span aria-hidden="true">→</span></button>
+          <button class="secondary" id="demoBtn" type="button" aria-label="Try judge demo">Demo</button>
+        </div>
+      </section>
+
+      <aside class="trip-ticket" aria-label="Trip preview">
+        <div class="ticket-top"><span>FLASH / TRIP</span><span>LIVE BRIEF</span></div>
+        <p class="ticket-label">Destination</p><strong id="ticketCity">Pick a city</strong>
+        <div class="ticket-route" aria-hidden="true"><i></i><span></span><i></i></div>
+        <div class="ticket-grid">
+          <div><span>Window</span><b id="ticketTiming">10:00–19:00</b></div>
+          <div><span>Travel</span><b id="ticketMode">Transit</b></div>
+        </div>
+        <p class="ticket-vibe" id="ticketVibe">Architecture · Food · Views</p>
+        <small>Your brief updates as you choose. Nothing is booked or shared.</small>
+      </aside>
+    </div>
+  </section>
+
+  <section class="view loading-view" id="loadingView" aria-labelledby="loadingTitle" hidden>
+    <div class="loading-shell">
+      <p class="eyebrow">Route lab in progress</p>
+      <h1 id="loadingTitle">Making the city<br><em>fit your clock.</em></h1>
+      <div class="route-loader" aria-hidden="true">
+        <svg viewBox="0 0 520 120"><path class="route-base" d="M8 92 C90 15 145 108 224 50 S360 108 510 22"/><path class="route-live" d="M8 92 C90 15 145 108 224 50 S360 108 510 22"/></svg>
+        <i class="load-dot d1"></i><i class="load-dot d2"></i><i class="load-dot d3"></i>
       </div>
-      <div class="day-tabs" id="dayTabs" hidden aria-label="Trip days"></div>
-      <div id="summary">Your stops will line up here like stations on a transit line.</div>
-      <ol id="itin"></ol>
-      <div id="cuts"></div>
+      <p id="loadingSummary" class="loading-summary" role="status" aria-live="polite">Opening the map and sharpening a pencil…</p>
+      <button id="loadingBack" class="text-btn" type="button" disabled>Back to edit</button>
+    </div>
+    <div id="loadingTraceSlot"></div>
+  </section>
+
+  <section class="view results-view" id="resultsView" aria-labelledby="resultsTitle" hidden>
+    <header class="results-hero">
+      <div>
+        <p class="eyebrow">Your route is ready</p>
+        <h1 id="resultsTitle">A good day,<br><em>in the right order.</em></h1>
+      </div>
+      <button class="secondary edit-trip" id="editTripBtn" type="button">Edit trip</button>
+    </header>
+
+    <section class="story" id="storyBox" aria-live="polite">
+      <span class="story-mark" aria-hidden="true">FP</span>
+      <p id="story">Your route story will appear here.</p>
     </section>
-  </div>
+
+    <div class="result-toolbar">
+      <div class="day-tabs" id="dayTabs" role="group" hidden aria-label="Trip days"></div>
+      <div class="export-actions" role="group" aria-label="Export itinerary">
+        <a class="smallbtn" id="mapsBtn" href="#" target="_blank" rel="noopener" aria-disabled="true">Open in Maps</a>
+        <button class="smallbtn" id="icsBtn" type="button" title="Download .ics calendar" disabled>Calendar</button>
+        <button class="smallbtn" id="copyBtn" type="button" disabled>Copy</button>
+      </div>
+    </div>
+    <div id="summary">Your stops will line up here like stations on a transit line.</div>
+
+    <div class="result-tabs" role="tablist" aria-label="Route view">
+      <button type="button" role="tab" data-result-tab="itinerary" aria-selected="true">Itinerary</button>
+      <button type="button" role="tab" data-result-tab="map" aria-selected="false">Map</button>
+    </div>
+
+    <div class="result-grid">
+      <section class="panel result-pane mapwrap mobile-hidden" id="mapPane" data-pane="map" role="tabpanel" aria-label="Map of the plan">
+        <div class="panelhead"><h2>Route map</h2><span class="map-kicker">Tap &amp; explore</span></div>
+        <div id="gmap"></div>
+        <div class="legend">
+          <span><i class="lw"></i>Walk</span><span><i class="lt"></i>Transit</span><span><i class="lr"></i>Ride</span>
+          <span class="note" id="mapNote"></span>
+        </div>
+      </section>
+      <section class="panel itin result-pane" id="itineraryPane" data-pane="itinerary" role="tabpanel" aria-labelledby="h-itin">
+        <div class="panelhead"><h2 id="h-itin">Your line-up</h2><span class="map-kicker">Built to fit</span></div>
+        <ol id="itin"></ol><div id="cuts"></div>
+      </section>
+    </div>
+
+    <details class="panel behind-plan">
+      <summary>Behind the route</summary>
+      <p>Every external call and planning step used to build this itinerary.</p>
+      <div id="resultsTraceSlot"></div>
+    </details>
+  </section>
+
+  <section class="panel tracep" id="tracePanel" aria-labelledby="h-trace">
+    <h2 id="h-trace">What the agent is doing</h2>
+    <ol id="trace"><li class="empty">Real planning steps will appear here.</li></ol>
+  </section>
 </main>
 
 <script>
@@ -370,17 +605,54 @@ const USES_POSITION=["rain","late","tired","skip","include"];
 
 const S={likes:new Set(["architecture","food","views"]),skips:new Set(["museums"]),mode:"transit",blocks:true,
   tags:[...PRESETS],appointments:[],lastParsed:null,fromNotes:null,startPlace:null,endPlace:null,busy:false,plan:null,sid:null,
-  days:null,activeDay:0};
+  days:null,activeDay:0,view:"setup",resultTab:"itinerary"};
+
+/* ============ views ============ */
+const VIEW_IDS={setup:"#setupView",loading:"#loadingView",results:"#resultsView"};
+function showView(name,focus=true){
+  S.view=name;
+  Object.entries(VIEW_IDS).forEach(([key,id])=>$(id).hidden=key!==name);
+  if(name==="loading")$("#loadingTraceSlot").appendChild($("#tracePanel"));
+  if(name==="results")$("#resultsTraceSlot").appendChild($("#tracePanel"));
+  document.body.dataset.view=name;
+  window.scrollTo({top:0,behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});
+  if(focus){
+    const target=name==="setup"?"#setupTitle":name==="loading"?"#loadingTitle":"#resultsTitle";
+    $(target).setAttribute("tabindex","-1");$(target).focus({preventScroll:true});
+  }
+}
+function setResultTab(name){
+  S.resultTab=name;
+  $$(".result-tabs [data-result-tab]").forEach(b=>b.setAttribute("aria-selected",String(b.dataset.resultTab===name)));
+  $$(".result-pane").forEach(p=>p.classList.toggle("mobile-hidden",p.dataset.pane!==name));
+  if(name==="map"&&S.plan)setTimeout(()=>MapView.draw(S.plan),0);
+}
+function updateTicket(){
+  const city=$("#city").value.trim()||"Pick a city",days=Math.max(1,Number($("#days").value)||1);
+  $("#ticketCity").textContent=city;
+  $("#ticketTiming").textContent=days>1?`${days} days`:`${$("#tStart").value||"10:00"}–${$("#tEnd").value||"19:00"}`;
+  $("#ticketMode").textContent=MODE_TXT[S.mode].replace("Walk + ","");
+  const vibe=[...S.likes].slice(0,3).map(x=>x[0].toUpperCase()+x.slice(1));
+  $("#ticketVibe").textContent=vibe.length?vibe.join(" · "):"Open to surprises";
+}
+$("#loadingTraceSlot").appendChild($("#tracePanel"));
+$("#tripForm").addEventListener("input",updateTicket);
+$("#tripForm").addEventListener("change",updateTicket);
+$(".result-tabs").addEventListener("click",e=>{const b=e.target.closest("[data-result-tab]");if(b)setResultTab(b.dataset.resultTab);});
+$("#editTripBtn").addEventListener("click",()=>showView("setup"));
+$("#loadingBack").addEventListener("click",()=>{if(!S.busy)showView("setup");});
+$("#brandHome").addEventListener("click",e=>{e.preventDefault();if(!S.busy)showView("setup");});
 
 /* ============ form ============ */
 function renderChips(){
   $("#chips").innerHTML=S.tags.map(t=>`<button type="button" class="chip" data-tag="${esc(t)}">${esc(t[0].toUpperCase()+t.slice(1))}</button>`).join("");
-  syncForm();
+  syncForm();updateTicket();
 }
 function syncForm(){
   $$(".chip").forEach(c=>{const t=c.dataset.tag;c.dataset.state=S.likes.has(t)?"like":S.skips.has(t)?"skip":"";});
   $$("#modeSeg button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.mode===S.mode));
   $$("#styleSeg button").forEach(b=>b.setAttribute("aria-pressed",(b.dataset.blocks==="1")===S.blocks));
+  updateTicket();
 }
 $("#chips").addEventListener("click",e=>{const c=e.target.closest(".chip");if(!c)return;const t=c.dataset.tag;
   if(S.likes.has(t)){S.likes.delete(t);S.skips.add(t);}else if(S.skips.has(t))S.skips.delete(t);else S.likes.add(t);syncForm();});
@@ -593,7 +865,12 @@ async function stream(url,body,onEvent){
 }
 
 /* ============ trace ============ */
-function traceReset(){$("#trace").innerHTML="";}
+function traceReset(){
+  $("#trace").innerHTML="";
+  $("#loadingSummary").textContent="Opening the map and sharpening a pencil…";
+  $("#loadingView").classList.remove("has-error");
+  $("#loadingBack").disabled=true;
+}
 function traceStep(e){
   const ol=$("#trace");let li=ol.querySelector(`li[data-key="${e.key}"]`);
   if(!li){li=document.createElement("li");li.dataset.key=e.key;ol.appendChild(li);}
@@ -604,18 +881,35 @@ function traceStep(e){
     (e.result?`<div class="r">${esc(e.result)}</div>`:e.status==="run"?`<div class="r">Working…</div>`:"")+
     (e.detail?`<pre>${esc(e.detail)}</pre>`:"")+
     (li.dataset.source?`<div class="src">${esc(li.dataset.source)}</div>`:"");
+  if(e.status==="run"&&e.title)$("#loadingSummary").textContent=e.title+"…";
+  else if(e.status==="fail")$("#loadingSummary").textContent=e.result||"That step hit a snag.";
 }
 function failRunning(){ $$("#trace li.run").forEach(li=>{li.className="fail";}); }
 
-function setStory(text,isError=false){$("#story").textContent=text;$("#storyBox").classList.toggle("error",isError);}
+function setStory(text,isError=false){
+  $("#story").textContent=text;$("#storyBox").classList.toggle("error",isError);
+  if(S.view==="loading")$("#loadingSummary").textContent=text;
+  $("#loadingView").classList.toggle("has-error",isError);
+}
 function setBusy(b){
   S.busy=b;$("#planBtn").disabled=b;$("#demoBtn").disabled=b;
-  $("#planBtn").textContent=b?"Planning…":"Plan my day";
+  $("#planBtn").innerHTML=b?"Building your route…":"Build route <span aria-hidden=\"true\">→</span>";
+  $("#loadingBack").disabled=b;
+}
+function formError(message=""){
+  const box=$("#formError");box.textContent=message;box.hidden=!message;
+  $("#city").setAttribute("aria-invalid",String(Boolean(message)));
+  if(message){showView("setup",false);$("#city").focus();$("#city").scrollIntoView({block:"center"});}
 }
 
 /* ============ plan & replan ============ */
 async function planDay(){
-  if(S.busy)return;setBusy(true);traceReset();
+  if(!$("#city").value.trim()&&!$("#msg").value.trim()){
+    formError("Add the city you’re visiting before we build your route.");
+    return;
+  }
+  formError();
+  if(S.busy)return;setBusy(true);traceReset();showView("loading");
   S.days=null;S.activeDay=0;
   try{
     const text=$("#msg").value.trim();
@@ -630,14 +924,14 @@ async function planDay(){
         detail:any?JSON.stringify(used,null,2):undefined});
     }
     const body=readForm();
-    if(!body.city){setStory("Add the city you're visiting, then plan again.",true);return;}
+    if(!body.city){formError("Add the city you’re visiting before we build your route.");return;}
     setStory(`Planning your day in ${body.city}…`);
     await stream("/api/plan",body,handleEvent);
   }catch(err){failRunning();setStory(err.message,true);}
   finally{setBusy(false);}
 }
 async function loadDemo(){
-  if(S.busy)return;setBusy(true);traceReset();
+  if(S.busy)return;setBusy(true);traceReset();showView("loading");
   S.days=null;S.activeDay=0;
   try{
     traceStep({key:"demo",status:"run",title:"Load judge demo",call:"GET /api/demo",source:"server/main.py: demo_plan()"});
@@ -661,7 +955,7 @@ function devicePosition(){
     g=>res({lat:g.coords.latitude,lng:g.coords.longitude}),()=>res(null),{timeout:8000,maximumAge:60000}));
 }
 async function replan(event,delay=30,preStep=null,placeId=null){
-  if(S.busy||!S.sid)return;setBusy(true);traceReset();
+  if(S.busy||!S.sid)return;setBusy(true);traceReset();showView("loading");
   try{
     if(preStep)traceStep(preStep);
     const body={session_id:S.sid,event,delay_minutes:delay,place_id:placeId,client_time:new Date().toISOString()};
@@ -683,12 +977,16 @@ function handleEvent(e){
 /* ============ rendering ============ */
 function renderAll(){
   setStory(S.plan.story||"");
-  renderDayTabs();renderItin();MapView.draw(S.plan);
+  renderDayTabs();renderItin();
   const maps=$("#mapsBtn"),stops=planStops(S.plan);
   maps.href=googleMapsUrl(S.plan);maps.setAttribute("aria-disabled","false");
   maps.title=stops.length>9?"Google Maps supports up to 9 waypoints; this link includes the first 9.":"Open this route in Google Maps";
   $("#icsBtn").disabled=false;
   $("#copyBtn").disabled=!S.plan;
+  setResultTab("itinerary");
+  showView("results",false);
+  if(MapView.kind!=="google"||matchMedia("(min-width: 900px)").matches)MapView.draw(S.plan);
+  $("#resultsTitle").setAttribute("tabindex","-1");$("#resultsTitle").focus({preventScroll:true});
 }
 function renderDayTabs(){
   const box=$("#dayTabs"),many=S.days&&S.days.length>1;box.hidden=!many;
@@ -959,6 +1257,7 @@ function loadGoogleMaps(key){
   await MapView.init(cfg);
 })();
 $("#planBtn").addEventListener("click",planDay);
+$("#city").addEventListener("input",()=>{if($("#city").value.trim())formError();});
 $("#demoBtn").addEventListener("click",loadDemo);
 $("#icsBtn").addEventListener("click",downloadCalendar);
 $("#copyBtn").addEventListener("click",copyPlan);
