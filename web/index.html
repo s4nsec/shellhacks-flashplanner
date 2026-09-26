@@ -50,8 +50,6 @@ a{color:var(--blue)}
 .brand{display:flex;align-items:center;gap:.9rem}
 .brand h1{font-size:1.9rem;font-stretch:125%;font-weight:800;line-height:1}
 .brand p{margin:.3rem 0 0;color:var(--muted);max-width:52ch}
-#status{margin:0;font-size:.85rem;border:1px solid var(--line);border-radius:999px;padding:.35rem .8rem;background:var(--panel);color:var(--muted)}
-#status.bad{border-color:var(--bad);color:var(--bad);background:var(--badsoft)}
 
 .grid{display:grid;gap:1rem;padding:0 clamp(1rem,3vw,2rem) 2rem;grid-template-columns:340px minmax(0,1fr) 380px;align-items:start}
 .col{display:flex;flex-direction:column;gap:1rem;min-width:0}
@@ -210,7 +208,6 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;background:var(--paper
 .top{max-width:1480px;margin:auto;padding:1rem;flex-wrap:nowrap}
 .brand{color:var(--ink);text-decoration:none;font-size:1.15rem;font-weight:800;font-stretch:120%}
 .brand span{letter-spacing:-.03em}
-.top #status{max-width:54vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .app-shell{width:min(100%,1480px);margin:0 auto;padding:0 1rem calc(2rem + env(safe-area-inset-bottom,0px))}
 .view{animation:view-in .38s ease both}
 @keyframes view-in{from{opacity:0;transform:translateY(8px)}}
@@ -384,7 +381,6 @@ details.more summary{min-height:44px;display:flex;align-items:center;color:var(-
     </svg>
     <span>FlashPlanner</span>
   </a>
-  <p id="status">Connecting to the server…</p>
 </header>
 
 <main class="app-shell">
@@ -1235,9 +1231,8 @@ function loadGoogleMaps(key){
 (async()=>{
   let cfg={mapsKey:"",missing:[]};
   try{const r=await fetch("/api/config");cfg=await r.json();}
-  catch{$("#status").textContent="Can't reach the server. Start it with: uvicorn server.main:app";$("#status").classList.add("bad");}
-  if(cfg.missing&&cfg.missing.length){$("#status").textContent=`Missing ${cfg.missing.join(" and ")} in .env; use Demo for judging without keys`;$("#status").classList.add("bad");}
-  else if(cfg.model)$("#status").textContent=`Connected: ${cfg.model}, Places API, Routes API`;
+  catch{console.warn("Can't reach the server. Start it with: uvicorn server.main:app");}
+  if(cfg.missing&&cfg.missing.length)console.warn(`Missing ${cfg.missing.join(" and ")} in .env; use Demo for judging without keys`);
   await MapView.init(cfg);
 })();
 $("#planBtn").addEventListener("click",planDay);
