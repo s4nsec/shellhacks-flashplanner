@@ -123,7 +123,11 @@ Transit matrices allow 100 pairs per request; `routes.matrix()` batches them.
   hours, and the "It's raining" event marks the rest of the day as rainy.
 - **Transit** isn't available everywhere. Where there's no transit route, legs
   fall back to walking.
-- **"Walk + ride"** uses driving times with traffic plus 4 minutes for pickup,
-  a stand-in for rideshare or robotaxi.
+- **"Walk + ride"** uses driving times and distances with traffic plus 4 minutes
+  for pickup. Each ride leg shows a broad planning fare range, and the comparison
+  panel totals ride time/cost against transit. These are not live quotes: actual
+  fares vary by route, duration, and demand. Waymo availability links to its
+  published service-area list; Austin and Atlanta access is through Uber, and
+  cities in gradual rollout are labeled as limited.
 - **Gemini model.** If `gemini-3.8-flash` isn't available to you, set
   `GEMINI_MODEL` to a current model name.
