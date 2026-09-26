@@ -361,6 +361,23 @@ async def resolve_start(http: httpx.AsyncClient, trip: dict, city: str) -> tuple
     return hotel, sp.get("utcOffsetMinutes", 0)
 
 
+async def resolve_end(http: httpx.AsyncClient, trip: dict, city: str, hotel: dict) -> dict | str:
+    """Resolve the requested finishing point, reusing an autocomplete pick when present."""
+    picked = trip.get("end_place")
+    if picked:
+        return {"name": picked["name"], "lat": picked["lat"], "lng": picked["lng"]}
+    if not trip.get("end_location"):
+        return hotel
+    query = f"{trip['end_location']}, {city}"
+    hits = await places.search_text(http, query, 1, (hotel["lat"], hotel["lng"]))
+    if not hits:
+        return (f"Google Maps couldn't find “{query}”. "
+                "Try a station, airport, hotel, or street address.")
+    place = hits[0]
+    return {"name": places.display_name(place), "lat": place["location"]["latitude"],
+            "lng": place["location"]["longitude"]}
+
+
 @app.post("/api/plan")
 async def plan(req: TripRequest):
     stream = multi_day_plan_stream(req) if req.days > 1 else plan_stream(req)
@@ -438,18 +455,10 @@ async def plan_stream(req: TripRequest, persist: bool = True,
             hotel, utc_offset = start
             bias = (hotel["lat"], hotel["lng"])
 
-            end_location = hotel
-            if trip.get("end_location"):
-                end_q = f"{trip['end_location']}, {city}"
-                end_hits = await places.search_text(http, end_q, 1, bias)
-                if not end_hits:
-                    yield ev(type="error", message=(
-                        f"Google Maps couldn't find “{end_q}”. "
-                        "Try a station, airport, hotel, or street address."))
-                    return
-                ep = end_hits[0]
-                end_location = {"name": places.display_name(ep), "lat": ep["location"]["latitude"],
-                                "lng": ep["location"]["longitude"]}
+            end_location = await resolve_end(http, trip, city, hotel)
+            if isinstance(end_location, str):
+                yield ev(type="error", message=end_location)
+                return
 
             using_list = bool(trip["user_list"])
             queries = [] if using_list else (
@@ -658,7 +667,7 @@ async def plan_stream(req: TripRequest, persist: bool = True,
             # --- travel times
             pts = [(hotel["lat"], hotel["lng"])] + [(c.lat, c.lng) for c in shortlist]
             end_node = 0
-            if trip.get("end_location"):
+            if trip.get("end_location") or trip.get("end_place"):
                 end_node = len(pts)
                 pts.append((end_location["lat"], end_location["lng"]))
             modes = ["WALK", "TRANSIT"] + (["DRIVE"] if trip["getting_around"] == "ride" else [])

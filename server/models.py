@@ -19,13 +19,21 @@ class DayWindow(BaseModel):
     end_time: str = "19:00"
 
 
-class StartPlace(BaseModel):
-    """A place picked from the browser's autocomplete, so the server needn't look it up again."""
+class PickedPlace(BaseModel):
+    """A place picked from browser autocomplete, with coordinates already resolved."""
     place_id: str = ""
     name: str
     lat: float = Field(ge=-90, le=90)
     lng: float = Field(ge=-180, le=180)
+
+
+class StartPlace(PickedPlace):
+    """A picked starting place, including its timezone when Google provides it."""
     utc_offset_minutes: Optional[int] = Field(default=None, ge=-14 * 60, le=14 * 60)
+
+
+class EndPlace(PickedPlace):
+    """A picked finishing place."""
 
 
 class TripRequest(BaseModel):
@@ -36,6 +44,7 @@ class TripRequest(BaseModel):
     start_location: Optional[str] = None  # hotel name or address; defaults to the city center
     start_place: Optional[StartPlace] = None  # set when start_location came from autocomplete
     end_location: Optional[str] = None    # station, airport, hotel, etc.; defaults to start_location
+    end_place: Optional[EndPlace] = None  # set when end_location came from autocomplete
     loves: list[str] = Field(default_factory=list)
     skips: list[str] = Field(default_factory=list)
     must_see: list[str] = Field(default_factory=list)

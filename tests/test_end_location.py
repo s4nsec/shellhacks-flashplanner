@@ -1,6 +1,22 @@
+import asyncio
 import unittest
+from unittest import mock
 
 from server import main, planner
+from server.models import TripRequest
+
+
+def resolve_end(trip: TripRequest, hits: list[dict]):
+    queries = []
+
+    async def fake_search(http, query, page_size=20, bias=None):
+        queries.append((query, bias))
+        return hits
+
+    hotel = {"name": "Hotel", "lat": 45.5, "lng": -73.57}
+    with mock.patch.object(main.places, "search_text", fake_search):
+        result = asyncio.run(main.resolve_end(None, trip.model_dump(), trip.city, hotel))
+    return result, queries
 
 
 def session() -> planner.Session:
@@ -43,6 +59,30 @@ def session() -> planner.Session:
 
 
 class EndLocationTests(unittest.TestCase):
+    def test_picked_end_place_is_not_looked_up_again(self):
+        trip = TripRequest(city="Montreal", end_location="Central Station",
+                           end_place={"place_id": "abc", "name": "Gare Centrale",
+                                      "lat": 45.499, "lng": -73.566})
+
+        place, queries = resolve_end(trip, [])
+
+        self.assertEqual(place, {"name": "Gare Centrale", "lat": 45.499, "lng": -73.566})
+        self.assertEqual(queries, [])
+
+    def test_typed_end_location_is_searched_with_start_bias(self):
+        trip = TripRequest(city="Montreal", end_location="Central Station")
+        hit = {"displayName": {"text": "Gare Centrale"},
+               "location": {"latitude": 45.499, "longitude": -73.566}}
+
+        place, queries = resolve_end(trip, [hit])
+
+        self.assertEqual(place["name"], "Gare Centrale")
+        self.assertEqual(queries, [("Central Station, Montreal", (45.5, -73.57))])
+
+    def test_picked_end_place_rejects_bad_coordinates(self):
+        with self.assertRaises(ValueError):
+            TripRequest(city="Montreal", end_place={"name": "X", "lat": 0, "lng": 999})
+
     def test_demo_defaults_end_location_to_start(self):
         payload = main.demo_plan()
 

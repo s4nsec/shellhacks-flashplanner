@@ -82,8 +82,8 @@ You need Python 3.10 or newer.
 - `GET /api/demo`: static no-key Montreal plan for judging or screenshots.
 - `POST /api/parse` `{message, city?}`: Gemini turns the optional notes into trip
   settings. The page only uses them to fill fields left blank.
-- `POST /api/plan` with the trip settings (plus `start_place` when "Start at"
-  came from autocomplete, and optional `notes`): streams newline-delimited JSON,
+- `POST /api/plan` with the trip settings (plus `start_place` and `end_place` when
+  those locations came from autocomplete, and optional `notes`): streams newline-delimited JSON,
   one `step` event per stage, then a `plan` event (or an `error` event). Set
   `days` from 1 to 7 and optionally provide `day_windows` entries with
   `start_time` and `end_time` for per-day schedules.

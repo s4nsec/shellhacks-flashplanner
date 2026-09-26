@@ -248,7 +248,11 @@ details.more summary{cursor:pointer;font-size:.88rem;font-weight:600}
           <ul id="startLocList" class="ac-list" role="listbox" aria-label="Suggested places" hidden></ul>
           <p id="startLocPicked" class="picked"></p>
           <p id="startLocLive" class="sr-only" aria-live="polite"></p></div>
-        <div><label for="endLoc">Finish at</label><input type="text" id="endLoc" placeholder="Station, airport, or hotel"></div>
+        <div class="ac"><label for="endLoc">Finish at</label><input type="text" id="endLoc" placeholder="Station, airport, or hotel"
+          role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="endLocList" aria-describedby="endLocPicked" autocomplete="off">
+          <ul id="endLocList" class="ac-list" role="listbox" aria-label="Suggested finishing places" hidden></ul>
+          <p id="endLocPicked" class="picked"></p>
+          <p id="endLocLive" class="sr-only" aria-live="polite"></p></div>
       </div>
       <div class="row2">
         <div><label for="tStart">Start</label><input type="time" id="tStart" value="10:00"></div>
@@ -390,7 +394,7 @@ const MODE_TXT={walk:"Walk only",transit:"Walk + transit",ride:"Walk + ride"};
 const USES_POSITION=["rain","late","tired","skip","include"];
 
 const S={likes:new Set(["architecture","food","views"]),skips:new Set(["museums"]),mode:"transit",blocks:true,
-  tags:[...PRESETS],appointments:[],lastParsed:null,fromNotes:null,startPlace:null,busy:false,plan:null,sid:null,
+  tags:[...PRESETS],appointments:[],lastParsed:null,fromNotes:null,startPlace:null,endPlace:null,busy:false,plan:null,sid:null,
   days:null,activeDay:0};
 
 /* ============ form ============ */
@@ -446,8 +450,8 @@ function applyNotes(p){
   const a={likes:[],skips:[],added:[],must:[]},used={};
   const fill=(id,v,key)=>{if(!v||$(id).value.trim())return false;$(id).value=v;used[key]=v;return true;};
   fill("#city",p.city,"city");fill("#date",p.date,"date");
-  if(fill("#startLoc",p.start_location,"start_location"))clearStartPlace();
-  fill("#endLoc",p.end_location,"end_location");
+  if(fill("#startLoc",p.start_location,"start_location"))StartAC.clear();
+  if(fill("#endLoc",p.end_location,"end_location"))EndAC.clear();
   if(p.budget!=null&&$("#budget").value===""){$("#budget").value=p.budget;used.budget=p.budget;}
   const known=new Set([...S.likes,...S.skips].map(norm));
   const addTags=(xs,set,tags,key)=>{
@@ -483,7 +487,7 @@ function readForm(){
   return {city:$("#city").value.trim(),date:$("#date").value||null,
     start_time:$("#tStart").value||"10:00",end_time:$("#tEnd").value||"19:00",
     start_location:$("#startLoc").value.trim()||null,start_place:S.startPlace,
-    end_location:$("#endLoc").value.trim()||null,
+    end_location:$("#endLoc").value.trim()||null,end_place:S.endPlace,
     loves:[...S.likes],skips:[...S.skips],
     must_see:splitList($("#mustSee").value),appointments:S.appointments,days,
     day_windows:$$("#dayWindows .day-window").map(r=>({start_time:r.querySelector(".day-start").value,end_time:r.querySelector(".day-end").value})),
@@ -494,89 +498,92 @@ function readForm(){
     by_neighborhood:S.blocks,...(S.meals?{meals:S.meals}:{}),auto_breaks:S.autoBreaks!==false,notes:$("#msg").value.trim(),user_list:$("#userList").value.split("\n").map(x=>x.replace(/^\s*(\d+[.)]|[-*•])\s*/,"").trim()).filter(Boolean)};
 }
 
-/* ============ "Start at" suggestions (Places API via the browser key) ============ */
-// Falls back to plain text: with no browser key, a failed request, or no pick,
-// the server looks up whatever was typed.
-const AC={input:$("#startLoc"),list:$("#startLocList"),items:[],active:-1,seq:0,pick:0,timer:0,token:null,lib:null,biasCity:null,bias:null};
+/* ============ location suggestions (Places API via the browser key) ============ */
+// Both fields fall back to plain text: with no browser key, a failed request,
+// or no pick, the server looks up whatever was typed.
+const PLACE_AC={lib:null,biasCity:null,bias:null};
 async function placesLib(){
   if(MapView.kind!=="google")return null;
-  try{AC.lib??=await google.maps.importLibrary("places");}catch(e){console.warn(e);return null;}
-  return AC.lib;
+  try{PLACE_AC.lib??=await google.maps.importLibrary("places");}catch(e){console.warn(e);return null;}
+  return PLACE_AC.lib;
 }
 async function cityBias(lib){
   const city=$("#city").value.trim();
   if(!city)return null;
-  if(AC.biasCity!==city){  // cache the lookup itself, so overlapping searches share it
-    AC.biasCity=city;
-    AC.bias=lib.Place.searchByText({textQuery:city,fields:["viewport"],maxResultCount:1})
+  if(PLACE_AC.biasCity!==city){  // cache the lookup itself, so overlapping searches share it
+    PLACE_AC.biasCity=city;
+    PLACE_AC.bias=lib.Place.searchByText({textQuery:city,fields:["viewport"],maxResultCount:1})
       .then(r=>r.places[0]?.viewport||null)
-      .catch(e=>{console.warn(e);if(AC.biasCity===city)AC.biasCity=null;return null;});  // retry next time
+      .catch(e=>{console.warn(e);if(PLACE_AC.biasCity===city)PLACE_AC.biasCity=null;return null;});  // retry next time
   }
-  return AC.bias;  // a bias, not a restriction, so places outside the city still show
+  return PLACE_AC.bias;  // a bias, not a restriction, so places outside the city still show
 }
-function clearStartPlace(){S.startPlace=null;$("#startLocPicked").textContent="";}
-function acAnnounce(t){$("#startLocLive").textContent=t;}
-function acOpen(){AC.list.hidden=false;AC.input.setAttribute("aria-expanded","true");}
-function acClose(){AC.seq++;clearTimeout(AC.timer);AC.list.hidden=true;AC.active=-1;
-  AC.input.setAttribute("aria-expanded","false");AC.input.removeAttribute("aria-activedescendant");}
-function acMessage(t){AC.items=[];AC.active=-1;AC.list.innerHTML=`<li class="ac-msg">${esc(t)}</li>`;acOpen();acAnnounce(t);}
-function acRender(){
-  AC.active=-1;
-  AC.list.innerHTML=AC.items.map((p,i)=>`<li role="option" id="startLocOpt${i}" data-i="${i}" aria-selected="false"><b>${esc(p.mainText?.text||p.text?.text)}</b>${p.secondaryText?.text?`<small>${esc(p.secondaryText.text)}</small>`:""}</li>`).join("");
-  acOpen();acAnnounce(`${AC.items.length} suggestion${AC.items.length===1?"":"s"}. Use the arrow keys to choose.`);
+function placeAutocomplete({inputId,listId,pickedId,liveId,stateKey,prefix,announcement,withOffset=false}){
+  const ac={input:$(inputId),list:$(listId),picked:$(pickedId),live:$(liveId),items:[],active:-1,seq:0,pick:0,timer:0,token:null};
+  const announce=t=>{ac.live.textContent=t;};
+  const clear=()=>{S[stateKey]=null;ac.picked.textContent="";};
+  const open=()=>{ac.list.hidden=false;ac.input.setAttribute("aria-expanded","true");};
+  const close=()=>{ac.seq++;clearTimeout(ac.timer);ac.list.hidden=true;ac.active=-1;
+    ac.input.setAttribute("aria-expanded","false");ac.input.removeAttribute("aria-activedescendant");};
+  const message=t=>{ac.items=[];ac.active=-1;ac.list.innerHTML=`<li class="ac-msg">${esc(t)}</li>`;open();announce(t);};
+  const render=()=>{ac.active=-1;
+    ac.list.innerHTML=ac.items.map((p,i)=>`<li role="option" id="${prefix}Opt${i}" data-i="${i}" aria-selected="false"><b>${esc(p.mainText?.text||p.text?.text)}</b>${p.secondaryText?.text?`<small>${esc(p.secondaryText.text)}</small>`:""}</li>`).join("");
+    open();announce(`${ac.items.length} suggestion${ac.items.length===1?"":"s"}. Use the arrow keys to choose.`);};
+  const fetchSuggestions=async q=>{
+    const seq=++ac.seq,lib=await placesLib();
+    if(!lib||seq!==ac.seq)return;
+    message("Searching…");
+    try{
+      ac.token??=new lib.AutocompleteSessionToken();
+      const req={input:q,sessionToken:ac.token},bias=await cityBias(lib);
+      if(bias)req.locationBias=bias;
+      const {suggestions}=await lib.AutocompleteSuggestion.fetchAutocompleteSuggestions(req);
+      if(seq!==ac.seq)return;
+      ac.items=suggestions.map(x=>x.placePrediction).filter(Boolean).slice(0,6);
+      ac.items.length?render():message("No matches. We'll search for what you typed.");
+    }catch(e){console.warn(e);if(seq===ac.seq)message("Suggestions aren't available. We'll search for what you typed.");}
+  };
+  const move=d=>{
+    if(ac.list.hidden||!ac.items.length)return;
+    ac.active=(ac.active+d+ac.items.length)%ac.items.length;
+    $$(`${listId} [role=option]`).forEach((li,i)=>li.setAttribute("aria-selected",String(i===ac.active)));
+    ac.input.setAttribute("aria-activedescendant",`${prefix}Opt${ac.active}`);
+    $(`#${prefix}Opt${ac.active}`).scrollIntoView({block:"nearest"});
+  };
+  const pick=async i=>{
+    const pred=ac.items[i];if(!pred)return;
+    const label=pred.mainText?.text||pred.text?.text||"",pickId=++ac.pick;
+    ac.input.value=label;clear();close();
+    try{
+      const place=pred.toPlace(),fields=["displayName","formattedAddress","location"];
+      if(withOffset)fields.push("utcOffsetMinutes");
+      await place.fetchFields({fields});
+      ac.token=null;
+      if(pickId!==ac.pick||ac.input.value!==label||!place.location)return;
+      const selected={place_id:place.id,name:place.displayName||label,lat:place.location.lat(),lng:place.location.lng()};
+      if(withOffset)selected.utc_offset_minutes=place.utcOffsetMinutes??null;
+      S[stateKey]=selected;ac.picked.textContent=place.formattedAddress||"";
+      announce(`${announcement} ${selected.name}`);
+    }catch(e){console.warn(e);announce("Couldn't load that place. We'll search for what you typed.");}
+  };
+  ac.input.addEventListener("input",()=>{clear();clearTimeout(ac.timer);ac.items=[];ac.pick++;
+    const q=ac.input.value.trim();if(q.length<3){ac.token=null;close();return;}ac.timer=setTimeout(()=>fetchSuggestions(q),250);});
+  ac.input.addEventListener("keydown",e=>{
+    if(e.key==="ArrowDown"){e.preventDefault();if(ac.list.hidden&&ac.items.length)open();move(1);}
+    else if(e.key==="ArrowUp"){e.preventDefault();move(-1);}
+    else if(e.key==="Enter"&&!ac.list.hidden&&ac.active>=0){e.preventDefault();pick(ac.active);}
+    else if(e.key==="Escape"&&!ac.list.hidden){e.preventDefault();close();}
+  });
+  ac.input.addEventListener("blur",close);
+  ac.list.addEventListener("mousedown",e=>e.preventDefault());
+  ac.list.addEventListener("click",e=>{const li=e.target.closest("[role=option]");if(li)pick(Number(li.dataset.i));});
+  return {clear,close};
 }
-async function acFetch(q){
-  const seq=++AC.seq,lib=await placesLib();
-  if(!lib||seq!==AC.seq)return;
-  acMessage("Searching…");
-  try{
-    AC.token??=new lib.AutocompleteSessionToken();
-    const req={input:q,sessionToken:AC.token},bias=await cityBias(lib);
-    if(bias)req.locationBias=bias;
-    const {suggestions}=await lib.AutocompleteSuggestion.fetchAutocompleteSuggestions(req);
-    if(seq!==AC.seq)return;
-    AC.items=suggestions.map(x=>x.placePrediction).filter(Boolean).slice(0,6);
-    AC.items.length?acRender():acMessage("No matches. We'll search for what you typed.");
-  }catch(e){console.warn(e);if(seq===AC.seq)acMessage("Suggestions aren't available. We'll search for what you typed.");}
-}
-function acMove(d){
-  if(AC.list.hidden||!AC.items.length)return;
-  AC.active=(AC.active+d+AC.items.length)%AC.items.length;
-  $$("#startLocList [role=option]").forEach((li,i)=>li.setAttribute("aria-selected",String(i===AC.active)));
-  AC.input.setAttribute("aria-activedescendant",`startLocOpt${AC.active}`);
-  $(`#startLocOpt${AC.active}`).scrollIntoView({block:"nearest"});
-}
-async function acPick(i){
-  const pred=AC.items[i];if(!pred)return;
-  const label=pred.mainText?.text||pred.text?.text||"",pick=++AC.pick;
-  AC.input.value=label;clearStartPlace();acClose();
-  try{
-    const place=pred.toPlace();
-    await place.fetchFields({fields:["displayName","formattedAddress","location","utcOffsetMinutes"]});
-    AC.token=null;  // a details fetch ends the billing session
-    if(pick!==AC.pick||AC.input.value!==label||!place.location)return;  // edited or re-picked while loading
-    S.startPlace={place_id:place.id,name:place.displayName||label,lat:place.location.lat(),lng:place.location.lng(),
-      utc_offset_minutes:place.utcOffsetMinutes??null};
-    $("#startLocPicked").textContent=place.formattedAddress||"";
-    acAnnounce(`Starting at ${S.startPlace.name}`);
-  }catch(e){console.warn(e);acAnnounce("Couldn't load that place. We'll search for what you typed.");}
-}
-AC.input.addEventListener("input",()=>{
-  clearStartPlace();clearTimeout(AC.timer);AC.items=[];AC.pick++;
-  const q=AC.input.value.trim();
-  if(q.length<3){AC.token=null;acClose();return;}
-  AC.timer=setTimeout(()=>acFetch(q),250);
-});
-AC.input.addEventListener("keydown",e=>{
-  if(e.key==="ArrowDown"){e.preventDefault();if(AC.list.hidden&&AC.items.length){acOpen();}acMove(1);}
-  else if(e.key==="ArrowUp"){e.preventDefault();acMove(-1);}
-  else if(e.key==="Enter"&&!AC.list.hidden&&AC.active>=0){e.preventDefault();acPick(AC.active);}
-  else if(e.key==="Escape"&&!AC.list.hidden){e.preventDefault();acClose();}
-});
-AC.input.addEventListener("blur",()=>acClose());
-$("#city").addEventListener("input",clearStartPlace);  // a picked place belongs to the old city
-AC.list.addEventListener("mousedown",e=>e.preventDefault());  // keep focus in the input
-AC.list.addEventListener("click",e=>{const li=e.target.closest("[role=option]");if(li)acPick(Number(li.dataset.i));});
+const StartAC=placeAutocomplete({inputId:"#startLoc",listId:"#startLocList",pickedId:"#startLocPicked",liveId:"#startLocLive",
+  stateKey:"startPlace",prefix:"startLoc",announcement:"Starting at",withOffset:true});
+const EndAC=placeAutocomplete({inputId:"#endLoc",listId:"#endLocList",pickedId:"#endLocPicked",liveId:"#endLocLive",
+  stateKey:"endPlace",prefix:"endLoc",announcement:"Finishing at"});
+$("#city").addEventListener("input",()=>{StartAC.clear();EndAC.clear();});  // picks belong to the old city
 
 /* ============ server calls ============ */
 async function errorText(r){try{const j=await r.json();return j.detail||JSON.stringify(j);}catch{return `${r.status} ${r.statusText}`;}}
