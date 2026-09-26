@@ -201,17 +201,58 @@ def _demo_stop(name, lat, lng, arrive, begin, leave, zone, kind, setting, reason
 
 # ---------- 1. understand the message ----------
 
+WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+
+def resolve_relative_day(relative: str, today: Date) -> Date | None:
+    """Resolve "today", "tomorrow" or a weekday name against `today` (the city's date).
+
+    A weekday means the next one on or after today.
+    """
+    relative = (relative or "").strip().lower()
+    if relative == "today":
+        return today
+    if relative == "tomorrow":
+        return today + timedelta(days=1)
+    if relative in WEEKDAYS:
+        return today + timedelta(days=(WEEKDAYS.index(relative) - today.weekday()) % 7)
+    return None
+
+
+def local_date(utc_offset_minutes: int, now_utc: datetime | None = None) -> Date:
+    now_utc = now_utc or datetime.now(timezone.utc)
+    return (now_utc + timedelta(minutes=utc_offset_minutes)).date()
+
+
+async def city_today(city: str, start_location: str = "") -> Date:
+    """Today's date where the traveler is going. Falls back to the UTC date."""
+    if config.MAPS_KEY and city:
+        query = f"{start_location}, {city}" if start_location else city
+        try:
+            async with httpx.AsyncClient(timeout=10) as http:
+                hits = await places.search_text(http, query, 1)
+            if hits and "utcOffsetMinutes" in hits[0]:
+                return local_date(hits[0]["utcOffsetMinutes"])
+        except Exception:  # noqa: BLE001  (use UTC rather than fail the parse)
+            pass
+    return local_date(0)
+
+
 @app.post("/api/parse")
 async def parse(req: ParseRequest):
     if not config.GEMINI_API_KEY:
         raise HTTPException(400, "Add GEMINI_API_KEY to the .env file, then restart the server.")
     try:
-        p = await gemini.parse_trip(req.message, Date.today().isoformat())
+        p = await gemini.parse_trip(req.message, local_date(0).isoformat())
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Gemini couldn't read the message: {e}")
+    date = p.date or None
+    if p.relative_day:
+        day = resolve_relative_day(p.relative_day, await city_today(p.city, p.start_location))
+        date = day.isoformat() if day else date
     return {
         "city": p.city,
-        "date": p.date or None,
+        "date": date,
         "start_time": p.start_time or None,
         "end_time": p.end_time or None,
         "start_location": p.start_location or None,
