@@ -13,6 +13,7 @@ class RideDetailsTests(unittest.TestCase):
         fare = rides.fare_range(8.0, 24)
         self.assertLess(fare["low"], fare["high"])
         self.assertEqual(fare["kind"], "planning-range")
+        self.assertEqual("https://support.google.com/waymo/answer/9059184", fare["source"])
 
     def test_ride_leg_uses_driving_distance_for_fare(self):
         c = planner.Cand(id="x", name="X", lat=1, lng=1, score=80,

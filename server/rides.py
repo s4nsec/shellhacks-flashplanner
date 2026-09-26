@@ -7,7 +7,7 @@ plans, but are never presented as bookable prices.
 import re
 
 WAYMO_SERVICE_URL = "https://support.google.com/waymo/answer/9059119"
-WAYMO_PRICING_URL = "https://support.google.com/waymo/answer/15485636"
+WAYMO_PRICING_URL = "https://support.google.com/waymo/answer/9059184"
 
 # Public service-area list checked 2026-09-26. Keep access distinctions visible:
 # Austin and Atlanta rides are booked in Uber, while several markets are rolling
@@ -57,4 +57,3 @@ def fare_range(km: float | None, minutes: int) -> dict | None:
     high = max(low + 2, 8 + 2.20 * miles + 0.50 * drive_minutes)
     return {"low": round(low, 2), "high": round(high, 2), "currency": "USD",
             "kind": "planning-range", "source": WAYMO_PRICING_URL}
-
