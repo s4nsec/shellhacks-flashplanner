@@ -152,8 +152,9 @@ async def narrate_plan(facts: dict) -> str:
     prompt = f"""Write a short, friendly summary (3 to 4 sentences, plain text, no lists,
 no markdown) of this day plan for the traveler. Mention how many stops, the
 neighborhood blocks if there are several, when lunch happens, any golden-hour
-stop before sunset, one notable place that was left out and why, and when
-they're back. Use only facts from this JSON; don't invent anything.
+stop before sunset, when rain is expected if rain_forecast is set, one notable
+place that was left out and why, and when they're back. Use only facts from
+this JSON; don't invent anything.
 
 {json.dumps(facts, ensure_ascii=False)}"""
     return await _text(prompt)

@@ -19,7 +19,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 
-from . import config, gemini, places, planner, routes
+from . import config, gemini, places, planner, routes, weather
 from .models import InterpretRequest, ParseRequest, ReplanRequest, TripRequest
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -395,11 +395,33 @@ async def plan_stream(req: TripRequest):
                           f"{closed} closed on {day.strftime('%A')}. {len(zones)} neighborhoods. "
                           f"Sunset around {fmt(sunset) if sunset else 'n/a'}.")
 
-            # --- travel times
+            # --- hourly forecast
             start_min = to_min(trip["start_time"], 600)
             deadline = to_min(trip["end_time"], 1140)
             if deadline <= start_min:
                 deadline = min(1439, start_min + 60)
+            yield step_run("weather", "Check the hourly forecast",
+                           f"weather.forecast.hours.lookup(hotel location, through {day.isoformat()})",
+                           "server/weather.py: hourly()")
+            t0 = time.perf_counter()
+            try:
+                forecast = await weather.hourly(http, hotel["lat"], hotel["lng"], day, utc_offset)
+            except (httpx.HTTPError, KeyError, ValueError):
+                forecast = []
+            rain_hours = weather.rain_hours(forecast)
+            rain = _rain_windows(rain_hours, start_min, deadline)
+            if not forecast:
+                wx_txt = ("No forecast for that date (it covers the next 10 days), "
+                          "so the plan assumes it stays dry.")
+            elif rain:
+                wx_txt = f"Rain likely {_windows_text(rain)}. Outdoor stops go to the dry hours."
+            else:
+                wx_txt = f"No rain expected between {fmt(start_min)} and {fmt(deadline)}."
+            wx_detail = "\n".join(f"{fmt(x['hour'] * 60):>8}  {x['prob']:3d}%  {x['mm']:.1f} mm"
+                                   for x in forecast if start_min // 60 <= x["hour"] <= deadline // 60)
+            yield step_ok("weather", t0, wx_txt, wx_detail or None)
+
+            # --- travel times
             pts = [(hotel["lat"], hotel["lng"])] + [(c.lat, c.lng) for c in shortlist]
             modes = ["WALK", "TRANSIT"] + (["DRIVE"] if trip["getting_around"] == "ride" else [])
             yield step_run("matrix", "Get travel times between every pair",
@@ -423,7 +445,8 @@ async def plan_stream(req: TripRequest):
                 id=uuid.uuid4().hex[:12], trip=trip, date=day.isoformat(), weekday=weekday,
                 utc_offset=utc_offset, sunset=sunset, hotel=hotel, cands=shortlist,
                 walk=walk, walk_m=walk_m, transit=transit, drive=drive,
-                start=start_min, deadline=deadline, now=start_min, loc=0)
+                start=start_min, deadline=deadline, now=start_min, loc=0,
+                forecast=forecast, rain_hours=rain_hours)
             for c in shortlist:
                 del c._raw
 
@@ -436,6 +459,7 @@ async def plan_stream(req: TripRequest):
             nodes = list(range(1, len(shortlist) + 1))
             s.route = await asyncio.to_thread(planner.solve, s, s.now, 0, nodes)
             s.initial_route, s.initial_meal_slot = list(s.route), dict(s.meal_slot)
+            s.initial_weather_slot = dict(s.weather_slot)
             base = planner.naive(s, s.now, 0, nodes)
             res = planner.simulate(s, s.route, s.now, 0)
             nres = planner.simulate(s, base, s.now, 0)
@@ -496,9 +520,11 @@ async def replan_stream(req: ReplanRequest):
                      if k not in {x["node"] for x in s.completed} and k not in s.skipped]
             if req.event == "reset":
                 s.completed, s.skipped, s.now, s.loc = [], set(), s.start, 0
-                s.raining = s.tired = False
+                s.tired = False
+                s.rain_hours = weather.rain_hours(s.forecast)
                 s.route, s.changed, s.dropped = list(s.initial_route), set(), []
                 s.meal_slot = dict(s.initial_meal_slot)
+                s.weather_slot = dict(s.initial_weather_slot)
                 all_nodes = list(range(1, len(s.cands) + 1))
                 cuts = planner.cut_reasons(s, all_nodes, s.route, s.now)
                 yield ev(type="plan", **_payload(s, "Back to the start of the day. " + await _story(s, cuts), cuts))
@@ -531,7 +557,7 @@ async def replan_stream(req: ReplanRequest):
             if req.event == "late":
                 s.now += max(1, req.delay_minutes)
             elif req.event == "rain":
-                s.raining = True
+                s.rain_hours |= set(range(s.now // 60, 24))  # it's raining now; assume it keeps up
             elif req.event == "tired":
                 s.tired = True
             elif req.event == "skip" and prev_next:
@@ -584,6 +610,15 @@ def _stats(res):
     return {"stops": len(res["stops"]), "see": res["see"], "travel": res["travel"], "waited": res["waited"]}
 
 
+def _rain_windows(rain_hours, start, end):
+    """Rainy spells clipped to the trip window, as [from, to] minutes."""
+    return [[max(a, start), min(b, end)] for a, b in planner.spells(rain_hours) if b > start and a < end]
+
+
+def _windows_text(windows):
+    return ", ".join(f"{fmt(a)} to {fmt(b)}" for a, b in windows)
+
+
 def _blocks(s, stops):
     out = []
     for st in stops:
@@ -620,6 +655,7 @@ async def _story(s, cuts):
                    "neighborhood": s.cand(x["node"]).zone_name, "notes": x["notes"]} for x in res["stops"]],
         "neighborhood_blocks": [b["zone"] for b in _blocks(s, res["stops"])] if s.blocks else [],
         "walking_km": res["walk_km"], "sunset": fmt(s.sunset) if s.sunset else None,
+        "rain_forecast": _windows_text(_rain_windows(s.rain_hours, s.start, s.deadline)) or None,
         "left_out": cuts[:2], "back_at_hotel": fmt(res["end"]),
         "traveler": {k: s.trip.get(k) for k in ("loves", "skips", "pace")},
     }
@@ -692,6 +728,7 @@ def _payload(s, story, cuts):
         "session_id": s.id, "city": s.trip["city"], "date": s.date,
         "start": s.start, "deadline": s.deadline, "now": s.now, "sunset": s.sunset,
         "raining": s.raining, "tired": s.tired, "trip": s.trip,
+        "forecast": bool(s.forecast), "rain": _rain_windows(s.rain_hours, s.start, s.deadline),
         "hotel": s.hotel, "at": s.hotel["name"] if s.loc == 0 else s.cand(s.loc).name,
         "shifted": bool(s.completed and s.now != s.completed[-1]["leave"]) or (not s.completed and s.now != s.start),
         "completed": done, "stops": upcoming, "back": back, "end": res["end"],
