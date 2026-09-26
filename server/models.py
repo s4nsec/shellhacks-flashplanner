@@ -3,6 +3,11 @@ from typing import Optional
 from pydantic import BaseModel
 
 
+class Appointment(BaseModel):
+    place: str
+    time: str                            # 24-hour HH:MM
+
+
 class TripRequest(BaseModel):
     city: str
     date: Optional[str] = None            # YYYY-MM-DD, local to the city; defaults to today there
@@ -12,6 +17,7 @@ class TripRequest(BaseModel):
     loves: list[str] = []
     skips: list[str] = []
     must_see: list[str] = []
+    appointments: list[Appointment] = [] # reservations, shows, and other fixed-time stops
     pace: str = "normal"                  # relaxed | normal | packed
     getting_around: str = "transit"       # walk | transit | ride
     by_neighborhood: bool = True

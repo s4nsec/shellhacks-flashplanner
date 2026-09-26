@@ -109,6 +109,7 @@ async def parse(req: ParseRequest):
         "end_time": p.end_time or None,
         "start_location": p.start_location or None,
         "loves": p.loves, "skips": p.skips, "must_see": p.must_see,
+        "appointments": [a.model_dump() for a in p.appointments],
         "pace": p.pace if p.pace in planner.PACE else "normal",
         "getting_around": p.getting_around if p.getting_around in MODE_API else "transit",
         "by_neighborhood": p.by_neighborhood,
@@ -153,12 +154,15 @@ async def plan_stream(req: TripRequest):
             using_list = bool(trip["user_list"])
             queries = [] if using_list else (
                 [f"top tourist attractions in {city}"] + [f"best {x} in {city}" for x in trip["loves"][:3]])
-            named = [(n, "must") for n in trip["must_see"]] + [(n, "list") for n in trip["user_list"]]
+            named = ([(n, "must", None) for n in trip["must_see"]]
+                     + [(n, "list", None) for n in trip["user_list"]]
+                     + [(a["place"], "appointment", a["time"]) for a in trip["appointments"]])
             results = await asyncio.gather(
                 *(places.search_text(http, q, 20, bias) for q in queries),
-                *(places.search_text(http, f"{n}, {city}", 1, bias) for n, _ in named))
+                *(places.search_text(http, f"{n}, {city}", 1, bias) for n, _, _ in named))
             found: dict[str, dict] = {}
             flags: dict[str, set] = {}
+            appointment_times: dict[str, int] = {}
             rank: dict[str, int] = {}
             for qi, res in enumerate(results[:len(queries)]):
                 for i, p in enumerate(res):
@@ -167,10 +171,15 @@ async def plan_stream(req: TripRequest):
                     if places.is_visitable(p):
                         found.setdefault(p["id"], p)
             missing_names = []
-            for (name, kind), res in zip(named, results[len(queries):]):
+            for (name, kind, appointment_time), res in zip(named, results[len(queries):]):
                 if res:
-                    found.setdefault(res[0]["id"], res[0])
-                    flags.setdefault(res[0]["id"], set()).add(kind)
+                    pid = res[0]["id"]
+                    found.setdefault(pid, res[0])
+                    flags.setdefault(pid, set()).add(kind)
+                    if appointment_time is not None:
+                        minute = to_min(appointment_time, -1)
+                        if minute >= 0:
+                            appointment_times[pid] = minute
                 else:
                     missing_names.append(name)
             ids = list(found)[:MAX_CANDIDATES]
@@ -195,9 +204,10 @@ async def plan_stream(req: TripRequest):
             brief = [{"id": p["id"], "name": places.display_name(p), "types": p.get("types", [])[:4],
                       "rating": p.get("rating"), "reviews": p.get("userRatingCount", 0),
                       "summary": p.get("editorialSummary", {}).get("text", ""),
-                      "must_see": "must" in flags.get(p["id"], set())} for p in raw]
+                      "must_see": "must" in flags.get(p["id"], set()),
+                      "appointment": "appointment" in flags.get(p["id"], set())} for p in raw]
             judged = {j.id: j for j in await gemini.score_places(
-                {k: trip[k] for k in ("city", "loves", "skips", "must_see", "pace")}, brief)}
+                {k: trip[k] for k in ("city", "loves", "skips", "must_see", "appointments", "pace")}, brief)}
             cands = []
             for p in raw:
                 j = judged.get(p["id"])
@@ -211,13 +221,15 @@ async def plan_stream(req: TripRequest):
                     score=max(0, min(100, j.score)) if j else 30,
                     kind=j.kind if j and j.kind in planner.KIND_DEFAULT_MIN else "sight",
                     setting=j.setting if j and j.setting in planner.RAIN_FACTOR else "indoor",
-                    reason=j.reason if j else "", must=must)
+                    reason=j.reason if j else "", must=must,
+                    appointment_time=appointment_times.get(p["id"]))
                 c.visit_min = planner.KIND_DEFAULT_MIN[c.kind]
                 c._raw = p
-                if c.score > 0 or must or using_list:
+                if c.score > 0 or must or c.appointment_time is not None or using_list:
                     cands.append(c)
-            cands.sort(key=lambda c: (not c.must, -c.score))
-            shortlist = cands[:max(SHORTLIST, sum(c.must for c in cands))]
+            cands.sort(key=lambda c: (not (c.must or c.appointment_time is not None), -c.score))
+            required = sum(c.must or c.appointment_time is not None for c in cands)
+            shortlist = cands[:max(SHORTLIST, required)]
             top = ", ".join(f"{c.name} {c.score}" for c in shortlist[:3])
             yield step_ok("score", t0, f"Kept the best {len(shortlist)} for you. Top matches: {top}.")
 

@@ -346,7 +346,7 @@ const PRESETS=["architecture","food","views","history","art","museums","nature",
 const MODE_TXT={walk:"Walk only",transit:"Walk + transit",ride:"Walk + ride"};
 
 const S={likes:new Set(["architecture","food","views"]),skips:new Set(["museums"]),mode:"transit",blocks:true,
-  lastParsed:null,busy:false,plan:null,sid:null};
+  appointments:[],lastParsed:null,busy:false,plan:null,sid:null};
 
 /* ============ form ============ */
 $("#chips").innerHTML=PRESETS.map(t=>`<button type="button" class="chip" data-tag="${t}">${t[0].toUpperCase()+t.slice(1)}</button>`).join("");
@@ -378,6 +378,7 @@ function applyParsed(p){
     $("#moreLoves").value=moreL.join(", ");$("#moreSkips").value=moreS.join(", ");
   }
   if((p.must_see||[]).length)$("#mustSee").value=p.must_see.join(", ");
+  S.appointments=p.appointments||[];
   syncForm();
 }
 function readForm(){
@@ -385,7 +386,8 @@ function readForm(){
     start_time:$("#tStart").value||"10:00",end_time:$("#tEnd").value||"19:00",
     start_location:$("#startLoc").value.trim()||null,
     loves:[...S.likes,...splitList($("#moreLoves").value)],skips:[...S.skips,...splitList($("#moreSkips").value)],
-    must_see:splitList($("#mustSee").value),pace:$("#pace").value,getting_around:S.mode,
+    must_see:splitList($("#mustSee").value),appointments:S.appointments,
+    pace:$("#pace").value,getting_around:S.mode,
     by_neighborhood:S.blocks,user_list:$("#userList").value.split("\n").map(x=>x.replace(/^\s*(\d+[.)]|[-*•])\s*/,"").trim()).filter(Boolean)};
 }
 
@@ -501,6 +503,7 @@ function renderItin(){
     if(st.notes.includes("lunch"))tags.push(`<span class="tag gold">Lunch slot</span>`);
     if(st.notes.includes("dinner"))tags.push(`<span class="tag gold">Dinner slot</span>`);
     if(st.notes.includes("golden"))tags.push(`<span class="tag gold">Golden hour</span>`);
+    if(st.notes.includes("appointment"))tags.push(`<span class="tag gold">Fixed time</span>`);
     if(p.raining)tags.push(`<span class="tag rain">${st.setting==="outdoor"?"Outdoors":st.setting==="covered"?"Covered":"Indoors"}</span>`);
     tags.push(`<span class="tag">${esc(st.kind)}</span>`);
     let meta=`${hm(st.visit.minutes)} here`;
