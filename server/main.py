@@ -253,7 +253,7 @@ async def parse(req: ParseRequest):
     date = p.date or None
     if p.relative_day:
         day = resolve_relative_day(
-            p.relative_day, await city_today(p.city or req.city, p.start_location))
+            p.relative_day, await city_today(req.city or p.city, p.start_location))
         date = day.isoformat() if day else date
     return {
         "city": p.city,
@@ -284,6 +284,8 @@ async def resolve_start(http: httpx.AsyncClient, trip: dict, city: str) -> tuple
         if picked.get("utc_offset_minutes") is not None:
             return hotel, picked["utc_offset_minutes"]
         hits = await places.search_text(http, city, 1, (hotel["lat"], hotel["lng"]))
+        if not hits or "utcOffsetMinutes" not in hits[0]:
+            log.warning("No UTC offset for %s; using UTC", city)
         return hotel, (hits[0].get("utcOffsetMinutes", 0) if hits else 0)
     start_q = f"{trip['start_location']}, {city}" if trip.get("start_location") else city
     hits = await places.search_text(http, start_q, 1)

@@ -391,7 +391,7 @@ const PRESETS=["architecture","food","views","history","art","museums","nature",
 const MODE_TXT={walk:"Walk only",transit:"Walk + transit",ride:"Walk + ride"};
 
 const S={likes:new Set(["architecture","food","views"]),skips:new Set(["museums"]),mode:"transit",blocks:true,
-  appointments:[],lastParsed:null,startPlace:null,busy:false,plan:null,sid:null};
+  appointments:[],lastParsed:null,fromNotes:null,startPlace:null,busy:false,plan:null,sid:null};
 
 /* ============ form ============ */
 $("#chips").innerHTML=PRESETS.map(t=>`<button type="button" class="chip" data-tag="${t}">${t[0].toUpperCase()+t.slice(1)}</button>`).join("");
@@ -408,22 +408,38 @@ syncForm();
 
 const norm=s=>s.toLowerCase().trim().replace(/s$/,"");
 // Notes only fill what the settings leave open: blank fields, new interests, must-sees and bookings.
-function applyNotes(p){
-  const blank=id=>!$(id).value.trim();
-  if(p.city&&blank("#city"))$("#city").value=p.city;
-  if(p.date&&blank("#date"))$("#date").value=p.date;
-  if(p.start_location&&blank("#startLoc")){$("#startLoc").value=p.start_location;clearStartPlace();}
-  if(p.end_location&&blank("#endLoc"))$("#endLoc").value=p.end_location;
-  const known=new Set([...S.likes,...S.skips,...splitList($("#moreLoves").value),...splitList($("#moreSkips").value)].map(norm));
-  const addTags=(xs,set,field)=>{const extra=[];
-    xs.forEach(x=>{if(known.has(norm(x)))return;known.add(norm(x));const t=PRESETS.find(q=>norm(q)===norm(x));t?set.add(t):extra.push(x);});
-    if(extra.length)$(field).value=[...splitList($(field).value),...extra].join(", ");};
-  addTags(p.loves||[],S.likes,"#moreLoves");addTags(p.skips||[],S.skips,"#moreSkips");
-  const must=splitList($("#mustSee").value);
-  (p.must_see||[]).forEach(x=>{if(!must.some(m=>norm(m)===norm(x)))must.push(x);});
-  $("#mustSee").value=must.join(", ");
-  S.appointments=p.appointments||[];
+// What they added is remembered, so editing or clearing the notes takes it back out.
+function undoNotes(){
+  const a=S.fromNotes;S.fromNotes=null;S.appointments=[];
+  if(!a)return;
+  a.likes.forEach(t=>S.likes.delete(t));a.skips.forEach(t=>S.skips.delete(t));
+  const drop=(id,xs)=>{const gone=new Set(xs.map(norm));$(id).value=splitList($(id).value).filter(x=>!gone.has(norm(x))).join(", ");};
+  drop("#moreLoves",a.moreLoves);drop("#moreSkips",a.moreSkips);drop("#mustSee",a.must);
   syncForm();
+}
+function applyNotes(p){
+  undoNotes();
+  const a={likes:[],skips:[],moreLoves:[],moreSkips:[],must:[]},used={};
+  const fill=(id,v,key)=>{if(!v||$(id).value.trim())return false;$(id).value=v;used[key]=v;return true;};
+  fill("#city",p.city,"city");fill("#date",p.date,"date");
+  if(fill("#startLoc",p.start_location,"start_location"))clearStartPlace();
+  fill("#endLoc",p.end_location,"end_location");
+  const known=new Set([...S.likes,...S.skips,...splitList($("#moreLoves").value),...splitList($("#moreSkips").value)].map(norm));
+  const addTags=(xs,set,tags,field,extra,key)=>{
+    xs.forEach(x=>{if(known.has(norm(x)))return;known.add(norm(x));const t=PRESETS.find(q=>norm(q)===norm(x));
+      if(t){set.add(t);tags.push(t);}else extra.push(x);});
+    if(extra.length)$(field).value=[...splitList($(field).value),...extra].join(", ");
+    if(tags.length||extra.length)used[key]=[...tags,...extra];};
+  addTags(p.loves||[],S.likes,a.likes,"#moreLoves",a.moreLoves,"loves");
+  addTags(p.skips||[],S.skips,a.skips,"#moreSkips",a.moreSkips,"skips");
+  const must=splitList($("#mustSee").value);
+  (p.must_see||[]).forEach(x=>{if(!must.some(m=>norm(m)===norm(x))){must.push(x);a.must.push(x);}});
+  $("#mustSee").value=must.join(", ");
+  if(a.must.length)used.must_see=a.must;
+  S.appointments=p.appointments||[];
+  if(S.appointments.length)used.appointments=S.appointments;
+  S.fromNotes=a;syncForm();
+  return used;
 }
 function readForm(){
   return {city:$("#city").value.trim(),date:$("#date").value||null,
@@ -439,7 +455,7 @@ function readForm(){
 /* ============ "Start at" suggestions (Places API via the browser key) ============ */
 // Falls back to plain text: with no browser key, a failed request, or no pick,
 // the server looks up whatever was typed.
-const AC={input:$("#startLoc"),list:$("#startLocList"),items:[],active:-1,seq:0,timer:0,token:null,lib:null,biasCity:null,bias:null};
+const AC={input:$("#startLoc"),list:$("#startLocList"),items:[],active:-1,seq:0,pick:0,timer:0,token:null,lib:null,biasCity:null,bias:null};
 async function placesLib(){
   if(MapView.kind!=="google")return null;
   try{AC.lib??=await google.maps.importLibrary("places");}catch(e){console.warn(e);return null;}
@@ -448,10 +464,11 @@ async function placesLib(){
 async function cityBias(lib){
   const city=$("#city").value.trim();
   if(!city)return null;
-  if(AC.biasCity!==city){
-    AC.biasCity=city;AC.bias=null;
-    try{const {places}=await lib.Place.searchByText({textQuery:city,fields:["viewport"],maxResultCount:1});AC.bias=places[0]?.viewport||null;}
-    catch(e){console.warn(e);}
+  if(AC.biasCity!==city){  // cache the lookup itself, so overlapping searches share it
+    AC.biasCity=city;
+    AC.bias=lib.Place.searchByText({textQuery:city,fields:["viewport"],maxResultCount:1})
+      .then(r=>r.places[0]?.viewport||null)
+      .catch(e=>{console.warn(e);if(AC.biasCity===city)AC.biasCity=null;return null;});  // retry next time
   }
   return AC.bias;  // a bias, not a restriction, so places outside the city still show
 }
@@ -489,13 +506,13 @@ function acMove(d){
 }
 async function acPick(i){
   const pred=AC.items[i];if(!pred)return;
-  const label=pred.mainText?.text||pred.text?.text||"";
+  const label=pred.mainText?.text||pred.text?.text||"",pick=++AC.pick;
   AC.input.value=label;clearStartPlace();acClose();
   try{
     const place=pred.toPlace();
     await place.fetchFields({fields:["displayName","formattedAddress","location","utcOffsetMinutes"]});
     AC.token=null;  // a details fetch ends the billing session
-    if(AC.input.value!==label||!place.location)return;  // edited while loading
+    if(pick!==AC.pick||AC.input.value!==label||!place.location)return;  // edited or re-picked while loading
     S.startPlace={place_id:place.id,name:place.displayName||label,lat:place.location.lat(),lng:place.location.lng(),
       utc_offset_minutes:place.utcOffsetMinutes??null};
     $("#startLocPicked").textContent=place.formattedAddress||"";
@@ -503,9 +520,9 @@ async function acPick(i){
   }catch(e){console.warn(e);acAnnounce("Couldn't load that place. We'll search for what you typed.");}
 }
 AC.input.addEventListener("input",()=>{
-  clearStartPlace();clearTimeout(AC.timer);
+  clearStartPlace();clearTimeout(AC.timer);AC.items=[];AC.pick++;
   const q=AC.input.value.trim();
-  if(q.length<3){acClose();return;}
+  if(q.length<3){AC.token=null;acClose();return;}
   AC.timer=setTimeout(()=>acFetch(q),250);
 });
 AC.input.addEventListener("keydown",e=>{
@@ -515,6 +532,7 @@ AC.input.addEventListener("keydown",e=>{
   else if(e.key==="Escape"&&!AC.list.hidden){e.preventDefault();acClose();}
 });
 AC.input.addEventListener("blur",()=>acClose());
+$("#city").addEventListener("input",clearStartPlace);  // a picked place belongs to the old city
 AC.list.addEventListener("mousedown",e=>e.preventDefault());  // keep focus in the input
 AC.list.addEventListener("click",e=>{const li=e.target.closest("[role=option]");if(li)acPick(Number(li.dataset.i));});
 
@@ -563,12 +581,15 @@ async function planDay(){
   if(S.busy)return;setBusy(true);traceReset();
   try{
     const text=$("#msg").value.trim();
-    if(!text){S.appointments=[];S.lastParsed=null;}
+    if(!text){undoNotes();S.lastParsed=null;}
     else if(text!==S.lastParsed){
       traceStep({key:"parse",status:"run",title:"Read your extra notes",call:"gemini.generate_content(notes, schema=ParsedTrip)",source:"server/gemini.py: parse_trip()"});
       const t0=performance.now();const p=await postJSON("/api/parse",{message:text,city:$("#city").value.trim()});
-      applyNotes(p);S.lastParsed=text;
-      traceStep({key:"parse",status:"ok",result:"Used these only where your settings were blank or silent:",detail:JSON.stringify(p,null,2),ms:Math.round(performance.now()-t0)});
+      const used=applyNotes(p);S.lastParsed=text;
+      const any=Object.keys(used).length;
+      traceStep({key:"parse",status:"ok",ms:Math.round(performance.now()-t0),
+        result:any?"Added from your notes where your settings were blank or silent:":"Your settings already cover everything in the notes, so they win.",
+        detail:any?JSON.stringify(used,null,2):undefined});
     }
     const body=readForm();
     if(!body.city){setStory("Add the city you're visiting, then plan again.",true);return;}

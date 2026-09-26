@@ -50,6 +50,10 @@ class ResolveStartTests(unittest.TestCase):
         result, _ = resolve(trip, [])
         self.assertIn("couldn't find “Nowhere Inn, Montreal”", result)
 
+    def test_picked_place_rejects_bad_coordinates(self):
+        with self.assertRaises(ValueError):
+            TripRequest(city="Montreal", start_place={"name": "X", "lat": 999, "lng": 0})
+
     def test_notes_default_to_empty(self):
         self.assertEqual(TripRequest(city="Montreal").notes, "")
 

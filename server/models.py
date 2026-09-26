@@ -12,9 +12,9 @@ class StartPlace(BaseModel):
     """A place picked from the browser's autocomplete, so the server needn't look it up again."""
     place_id: str = ""
     name: str
-    lat: float
-    lng: float
-    utc_offset_minutes: Optional[int] = None
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    utc_offset_minutes: Optional[int] = Field(default=None, ge=-14 * 60, le=14 * 60)
 
 
 class TripRequest(BaseModel):
