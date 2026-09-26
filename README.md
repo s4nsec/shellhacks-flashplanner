@@ -105,6 +105,8 @@ Constants at the top of `server/planner.py`:
 - `SWITCH_POINTS`: how strongly the day sticks to one neighborhood at a time.
 - `TRAVEL_POINTS_PER_MIN`: how much travel time counts against a plan.
 - `WALK_CAP_KM`: longest leg that's always walked, per mode.
+- `WALK_LIMIT_KM`: most walking in a "Walk only" day, by pace. Walking already
+  done counts toward it when the day is re-planned.
 - `MEAL_EARLY_MIN`, `MEAL_LATE_MIN`: how long before and after each requested
   meal time a sit-down meal may start. Meals come from the trip's `meals` list, which defaults to
   lunch at 12:30 and dinner at 19:00; add breakfast, change the times, or send

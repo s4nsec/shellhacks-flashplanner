@@ -86,7 +86,7 @@ class BudgetTests(unittest.TestCase):
             end_location={"name": "Hotel", "lat": 0.0, "lng": 0.0}, end_node=0,
             cands=[done, next_up], walk=travel, walk_m=[[x * 100 for x in row] for row in travel],
             transit=travel, drive=None, start=600, deadline=900, now=655, loc=1,
-            completed=[{"node": 1, "notes": []}],
+            completed=[{"node": 1, "notes": [], "leg": {"mode": "walk", "min": 10, "km": 1.0}}],
         )
 
         self.assertEqual(planner.budget_left(s), 20)

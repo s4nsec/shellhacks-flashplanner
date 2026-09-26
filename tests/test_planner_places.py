@@ -65,8 +65,9 @@ class PlannerTests(unittest.TestCase):
         res = planner.simulate(s, [1], 540, 0)
 
         self.assertIsNotNone(res)
+        self.assertEqual(590, res["depart"])
         self.assertEqual(600, res["stops"][0]["begin"])
-        self.assertEqual(50, res["stops"][0]["wait"])
+        self.assertEqual(0, res["stops"][0]["wait"])
         self.assertIn("appointment", res["stops"][0]["notes"])
         self.assertEqual(645, res["end"])
 

@@ -1047,6 +1047,7 @@ def _stop_json(s, st, done):
             "arrive": st["arrive"], "begin": st["begin"], "wait": st["wait"], "leave": st["leave"],
             "leg": L, "notes": st["notes"], "done": done, "new": (not done) and st["node"] in s.changed,
             "visit": {"minutes": st["leave"] - st["begin"], "base": c.visit_min,
+                      "extra": st["leave"] - st["begin"] - planner.visit_len(s, st["node"]),
                       "source": c.visit_source, "evidence": c.evidence},
             "zone": c.zone_name, "kind": c.kind, "setting": c.setting, "reason": c.reason,
             "rating": c.rating, "count": c.count, "maps_uri": c.maps_uri,
@@ -1091,7 +1092,7 @@ def _payload(s, story, cuts):
     res = planner.simulate(s, s.route, s.now, s.loc)
     if res is None:  # out of time: go straight to the end point
         back = planner.leg(s, s.loc, s.end_node)
-        res = {"stops": [], "back": {**back, "from": s.loc}, "end": s.now + back["min"],
+        res = {"stops": [], "back": {**back, "from": s.loc}, "depart": s.now, "end": s.now + back["min"],
                "travel": back["min"], "walk_km": back["km"] if back["mode"] == "walk" else 0}
         s.route = []
     _log_itinerary(s, res)
@@ -1109,6 +1110,7 @@ def _payload(s, story, cuts):
     return {
         "session_id": s.id, "city": s.trip["city"], "date": s.date,
         "start": s.start, "deadline": s.deadline, "now": s.now, "sunset": s.sunset,
+        "depart": s.start if s.completed else res["depart"],  # when to leave the start point
         "raining": s.raining, "tired": s.tired, "trip": s.trip,
         "forecast": bool(s.forecast), "rain": _rain_windows(s.rain_hours, s.start, s.deadline),
         "utc_offset": s.utc_offset, "hotel": s.hotel, "end_location": s.end_location,

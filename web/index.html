@@ -1021,12 +1021,13 @@ function renderItin(){
     if(st.notes.includes("rain"))tags.push(`<span class="tag rain">${st.setting==="outdoor"?"Outdoors":st.setting==="covered"?"Covered":"Indoors"}</span>`);
     tags.push(`<span class="tag">${esc(st.kind)}</span>`);
     let meta=`${hm(st.visit.minutes)} here`;
+    if(st.visit.extra>0)meta+=` (${st.visit.extra} min extra instead of waiting later)`;
     if(st.wait>0&&st.opens!=null)meta+=`, opens ${fmt(st.opens)} so ${st.wait} min wait`;
     else if(st.wait>0)meta+=`, ${st.wait} min wait`;
     if(st.rating)meta+=`. Rated ${st.rating.toFixed(1)} (${(st.count||0).toLocaleString()})`;
     if(st.price)meta+=`${st.rating?" · ":". "}${priceText(st.price)}`;
     const v=st.visit,quotes=(v.evidence||[]).filter(x=>x.quote),of=((v.evidence||[]).find(x=>x.of)||{}).of||quotes.length;
-    const paced=v.minutes!==v.base?`, adjusted for ${esc(p.trip.pace)} pace`:"";
+    const paced=v.minutes-(v.extra||0)!==v.base?`, adjusted for ${esc(p.trip.pace)} pace`:"";
     let rv="";
     if(!st.done){
       if(v.source==="reviews"&&quotes.length)rv=`<details class="rv"><summary>Reviewers suggest ${hm(v.base)} (${quotes.length} of ${of} reviews)${paced}</summary><ul>${quotes.map(q=>`<li>“${esc(q.quote)}”<cite>${q.uri?`<a href="${esc(q.uri)}" target="_blank" rel="noopener">${esc(q.author)}</a>`:esc(q.author)}, Google review</cite></li>`).join("")}</ul></details>`;
@@ -1036,7 +1037,7 @@ function renderItin(){
     const name=st.maps_uri?`<a href="${esc(st.maps_uri)}" target="_blank" rel="noopener">${esc(st.name)}</a>`:esc(st.name);
     return `<li class="stn${st.done?" done":""}${st.new?" new":""}"><span class="tm">${fmt(st.begin)}</span><span class="rail"><span class="dot">${st.done?"✓":num}</span></span><div class="body"><div class="nm">${st.done||!S.sid?"":`<button class="lock${st.locked?" on":""}" data-id="${esc(st.id)}" data-locked="${st.locked?1:0}"${st.must||st.fixed?" disabled":""} title="${st.fixed?"Fixed-time plan from your request":st.must?"Must-see from your request":st.locked?"Let re-plans drop this stop":"Keep this stop through re-plans"}">${st.locked?"🔒 Locked":"Lock"}</button>`}${name}</div><div class="meta">${meta}</div>${!st.done&&st.reason?`<div class="why">${esc(st.reason)}</div>`:""}${rv}<div class="tags">${tags.join("")}</div></div></li>`;
   };
-  rows.push(`<li class="term"><span class="tm">${fmt(p.start)}</span><span class="rail"><span class="dot">H</span></span><div class="body"><div class="nm">${esc(p.hotel.name)}</div><div class="meta">Leave</div></div></li>`);
+  rows.push(`<li class="term"><span class="tm">${fmt(p.depart??p.start)}</span><span class="rail"><span class="dot">H</span></span><div class="body"><div class="nm">${esc(p.hotel.name)}</div><div class="meta">Leave</div></div></li>`);
   let n=0;
   p.completed.forEach((st,i)=>{rows.push(legRow(st.leg,true));if(heads.has(i))rows.push(zoneRow(heads.get(i),true));rows.push(stn(st,++n));});
   if(p.completed.length||p.shifted||p.here)rows.push(`<li class="now"><span class="tm">${fmt(p.now)}</span><span class="rail"><span class="dot"></span></span><div class="body"><div class="nm">You are here</div><div class="meta">${p.shifted?"Running behind the original plan":"Re-planning from this point"}</div></div></li>`);
@@ -1058,7 +1059,7 @@ function renderItin(){
 function itineraryText(p){
   const lines=[
     `FlashPlanner plan for ${p.city} (${p.date})`,
-    `${fmt(p.start)} leave ${p.hotel.name}; finish at ${p.end_location.name} around ${fmt(p.end)}`,
+    `${fmt(p.depart??p.start)} leave ${p.hotel.name}; finish at ${p.end_location.name} around ${fmt(p.end)}`,
     `${p.summary.stops} stops, ${p.summary.walk_km.toFixed(1)} km walking, ${hm(p.summary.moving)} moving`,
     ""
   ];

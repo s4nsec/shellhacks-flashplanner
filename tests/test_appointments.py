@@ -50,9 +50,10 @@ class AppointmentTests(unittest.TestCase):
         result = planner.simulate(s, [1], s.start, 0)
 
         self.assertIsNotNone(result)
-        self.assertEqual(result["stops"][0]["arrive"], 610)
+        self.assertEqual(result["depart"], 710)
+        self.assertEqual(result["stops"][0]["arrive"], 720)
         self.assertEqual(result["stops"][0]["begin"], 720)
-        self.assertEqual(result["stops"][0]["wait"], 110)
+        self.assertEqual(result["stops"][0]["wait"], 0)
         self.assertIn("appointment", result["stops"][0]["notes"])
 
     def test_simulate_rejects_late_arrival(self):
