@@ -1,10 +1,11 @@
 # Sightline
 
 An AI agent that plans a day in a city you've never visited. Tell it how long
-you have and what you like. It finds the places worth seeing, reads reviews to
-decide how long to stay at each, gets real travel times, and uses OR-Tools to
-pick the best set of stops and the order to visit them. When the day changes
-("it's pouring", "I'm running late"), it re-plans from where you are.
+you have, what you like, and where you need to finish. It finds the places worth
+seeing, reads reviews to decide how long to stay at each, gets real travel times,
+and uses OR-Tools to pick the best set of stops and the order to visit them. When
+the day changes ("it's pouring", "I'm running late"), it re-plans from where you
+are.
 
 Built for ShellHacks: the Waymo Mobility Challenge and Best Use of Gemini API.
 
@@ -70,6 +71,7 @@ You need Python 3.10 or newer.
 ## HTTP API
 
 - `GET /api/config`: which keys are set, and the browser map key.
+- `GET /api/demo`: static no-key Montreal plan for judging or screenshots.
 - `POST /api/parse` `{message}`: Gemini turns a message into trip settings.
 - `POST /api/plan` with the trip settings: streams newline-delimited JSON,
   one `step` event per stage, then a `plan` event (or an `error` event).
@@ -113,5 +115,5 @@ Transit matrices allow 100 pairs per request; `routes.matrix()` batches them.
   fall back to walking.
 - **"Walk + ride"** uses driving times with traffic plus 4 minutes for pickup,
   a stand-in for rideshare or robotaxi.
-- **Gemini model.** If `gemini-2.5-flash` isn't available to you, set
+- **Gemini model.** If `gemini-3.8-flash` isn't available to you, set
   `GEMINI_MODEL` to a current model name.

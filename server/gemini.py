@@ -38,6 +38,7 @@ class ParsedTrip(BaseModel):
     start_time: str         # HH:MM (24h) or ""
     end_time: str           # HH:MM (24h) or ""
     start_location: str     # hotel/address or ""
+    end_location: str       # station/airport/hotel/address or ""
     loves: list[str]
     skips: list[str]
     must_see: list[str]
@@ -104,6 +105,7 @@ Rules:
   If they give a duration ("6 hours from 11am"), compute end_time.
   An appointment time is not a start or end time unless they explicitly say their day starts or ends then.
 - start_location: hotel, Airbnb, address or neighborhood they're staying in, else "".
+- end_location: where they need to finish (station, airport, hotel, address), else "".
 - loves: short interest phrases they like ("architecture", "street food", "jazz bars").
 - skips: things they want to avoid ("museums", "crowds").
 - must_see: specific places they insist on.
@@ -162,8 +164,8 @@ async def narrate_plan(facts: dict) -> str:
     prompt = f"""Write a short, friendly summary (3 to 4 sentences, plain text, no lists,
 no markdown) of this day plan for the traveler. Mention how many stops, the
 neighborhood blocks if there are several, when lunch happens, any golden-hour
-stop before sunset, one notable place that was left out and why, and when
-they're back. Use only facts from this JSON; don't invent anything.
+stop before sunset, one notable place that was left out and why, and when and
+where they finish. Use only facts from this JSON; don't invent anything.
 
 {json.dumps(facts, ensure_ascii=False)}"""
     return await _text(prompt)
@@ -172,7 +174,7 @@ they're back. Use only facts from this JSON; don't invent anything.
 async def narrate_change(facts: dict) -> str:
     prompt = f"""Something changed during the traveler's day and the plan was re-optimized.
 In 2 to 3 plain sentences (no markdown), say what changed, which stops were
-dropped or added and why, what's next, and when they'll be back. Use only
+dropped or added and why, what's next, and when and where they'll finish. Use only
 these facts:
 
 {json.dumps(facts, ensure_ascii=False)}"""

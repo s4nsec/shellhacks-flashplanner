@@ -1,7 +1,7 @@
 """The route math: which places to visit, in what order, at what times.
 
 Model: one "vehicle" (the traveler) leaves a start point at a start time and must
-be back at the hotel by the deadline. Every place is optional (prize-collecting):
+reach the requested end point by the deadline. Every place is optional (prize-collecting):
 skipping one costs its score, so the solver fits the most valuable set of stops.
 Opening hours are time windows, visit lengths are service times, meals must land
 in lunch or dinner hours, viewpoints lean toward golden hour, and switching
@@ -60,8 +60,10 @@ class Session:
     weekday: int                  # Places convention, 0 = Sunday
     utc_offset: int
     sunset: int | None
-    hotel: dict                   # {name, lat, lng}
-    cands: list                   # node k (k >= 1) is cands[k - 1]; node 0 is the hotel
+    hotel: dict                   # start point: {name, lat, lng}
+    end_location: dict            # requested end point; defaults to hotel
+    end_node: int                 # 0 when ending at hotel, otherwise len(cands) + 1
+    cands: list                   # candidate node k (k >= 1) is cands[k - 1]
     walk: list
     walk_m: list
     transit: list
@@ -87,6 +89,8 @@ class Session:
     def point(self, node: int) -> tuple[float, float]:
         if node == 0:
             return (self.hotel["lat"], self.hotel["lng"])
+        if node == self.end_node:
+            return (self.end_location["lat"], self.end_location["lng"])
         c = self.cand(node)
         return (c.lat, c.lng)
 
@@ -238,7 +242,7 @@ def simulate(s: Session, route: list, t0: int, start_node: int) -> dict | None:
         stops.append({"node": node, "from": loc, "leg": L, "arrive": arrive, "begin": begin,
                       "wait": begin - arrive, "leave": leave, "notes": notes})
         t, loc = leave, node
-    back = leg(s, loc, 0)
+    back = leg(s, loc, s.end_node)
     end = t + back["min"]
     if end > s.deadline:
         return None
@@ -254,7 +258,7 @@ def simulate(s: Session, route: list, t0: int, start_node: int) -> dict | None:
 
 def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: int = 3) -> list:
     feasible = [k for k in cand_nodes if allowed_starts(s, k, t0)]
-    nodes = [start_node, 0] + feasible            # local 0 = start, local 1 = hotel (end)
+    nodes = [start_node, s.end_node] + feasible   # local 0 = start, local 1 = trip end
     n = len(nodes)
     T = [[0 if i == j else leg(s, nodes[i], nodes[j])["min"] for j in range(n)] for i in range(n)]
     visit = [0, 0] + [visit_len(s, k) for k in feasible]

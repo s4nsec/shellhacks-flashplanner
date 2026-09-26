@@ -17,6 +17,8 @@ def session(*candidates: planner.Cand) -> planner.Session:
         utc_offset=0,
         sunset=None,
         hotel={"name": "Hotel", "lat": 0.0, "lng": 0.0},
+        end_location={"name": "Hotel", "lat": 0.0, "lng": 0.0},
+        end_node=0,
         cands=list(candidates),
         walk=travel,
         walk_m=distances,
