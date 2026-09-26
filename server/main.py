@@ -319,7 +319,7 @@ async def plan_stream(req: TripRequest):
             t0 = time.perf_counter()
             nodes = list(range(1, len(shortlist) + 1))
             s.route = await asyncio.to_thread(planner.solve, s, s.now, 0, nodes)
-            s.initial_route = list(s.route)
+            s.initial_route, s.initial_meal_slot = list(s.route), dict(s.meal_slot)
             base = planner.naive(s, s.now, 0, nodes)
             res = planner.simulate(s, s.route, s.now, 0)
             nres = planner.simulate(s, base, s.now, 0)
@@ -382,6 +382,7 @@ async def replan_stream(req: ReplanRequest):
                 s.completed, s.skipped, s.now, s.loc = [], set(), s.start, 0
                 s.raining = s.tired = False
                 s.route, s.changed, s.dropped = list(s.initial_route), set(), []
+                s.meal_slot = dict(s.initial_meal_slot)
                 all_nodes = list(range(1, len(s.cands) + 1))
                 cuts = planner.cut_reasons(s, all_nodes, s.route, s.now)
                 yield ev(type="plan", **_payload(s, "Back to the start of the day. " + await _story(s, cuts), cuts))
