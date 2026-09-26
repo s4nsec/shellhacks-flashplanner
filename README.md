@@ -70,6 +70,7 @@ You need Python 3.10 or newer.
 ## HTTP API
 
 - `GET /api/config`: which keys are set, and the browser map key.
+- `GET /api/demo`: static no-key Montreal plan for judging or screenshots.
 - `POST /api/parse` `{message}`: Gemini turns a message into trip settings.
 - `POST /api/plan` with the trip settings: streams newline-delimited JSON,
   one `step` event per stage, then a `plan` event (or an `error` event).
@@ -113,5 +114,5 @@ Transit matrices allow 100 pairs per request; `routes.matrix()` batches them.
   fall back to walking.
 - **"Walk + ride"** uses driving times with traffic plus 4 minutes for pickup,
   a stand-in for rideshare or robotaxi.
-- **Gemini model.** If `gemini-3.1-pro-preview` isn't available to you, set
+- **Gemini model.** If `gemini-3.8-flash` isn't available to you, set
   `GEMINI_MODEL` to a current model name.

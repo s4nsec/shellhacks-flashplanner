@@ -1,6 +1,6 @@
 """Request bodies for the HTTP API."""
-from typing import Optional
-from pydantic import BaseModel
+from typing import Literal, Optional
+from pydantic import BaseModel, Field
 
 
 class TripRequest(BaseModel):
@@ -9,13 +9,13 @@ class TripRequest(BaseModel):
     start_time: str = "10:00"             # 24-hour HH:MM
     end_time: str = "19:00"
     start_location: Optional[str] = None  # hotel name or address; defaults to the city center
-    loves: list[str] = []
-    skips: list[str] = []
-    must_see: list[str] = []
-    pace: str = "normal"                  # relaxed | normal | packed
-    getting_around: str = "transit"       # walk | transit | ride
+    loves: list[str] = Field(default_factory=list)
+    skips: list[str] = Field(default_factory=list)
+    must_see: list[str] = Field(default_factory=list)
+    pace: Literal["relaxed", "normal", "packed"] = "normal"
+    getting_around: Literal["walk", "transit", "ride"] = "transit"
     by_neighborhood: bool = True
-    user_list: list[str] = []             # place names pasted from a blog or list
+    user_list: list[str] = Field(default_factory=list)  # place names pasted from a blog or list
 
 
 class ParseRequest(BaseModel):
@@ -29,5 +29,5 @@ class InterpretRequest(BaseModel):
 
 class ReplanRequest(BaseModel):
     session_id: str
-    event: str                            # done | rain | late | tired | skip | reset
-    delay_minutes: int = 40
+    event: Literal["done", "rain", "late", "tired", "skip", "reset"]
+    delay_minutes: int = 30
