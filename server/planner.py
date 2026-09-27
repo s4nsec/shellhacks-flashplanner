@@ -6,11 +6,12 @@ skipping one costs its score, so the solver fits the most valuable set of stops.
 Opening hours are time windows, visit lengths are service times, each sit-down
 meal lands near the time the traveler asked for (lunch and dinner by default), a
 café becomes a coffee break once the traveler has been going for a while,
-viewpoints lean toward golden hour, places keep to the time of day they suit (brunch
-spots in the morning, bars in the evening, night views after dark), and switching
-neighborhoods costs points so the day forms blocks. Hours with rain in the
-forecast make outdoor stops worth less, so they get pushed to dry hours. Parks,
-trails and other daylight-only places fit between sunrise and dusk. When the
+sightseeing is capped by pace so the day leaves room to rest (meals and
+coffee breaks don't count), viewpoints lean toward golden hour, places keep to the
+time of day they suit (brunch spots in the morning, bars in the evening, night views
+after dark), and switching neighborhoods costs points so the day forms blocks. Hours
+with rain in the forecast make outdoor stops worth less, so they get pushed to dry
+hours. Parks, trails and other daylight-only places fit between sunrise and dusk. When the
 traveler sets a budget, the estimated tickets and meals must fit inside it.
 """
 import math
@@ -24,6 +25,8 @@ from . import rides
 PACE = {"relaxed": 1.25, "normal": 1.0, "packed": 0.8}
 WALK_CAP_KM = {"walk": (math.inf, 0.9), "transit": (1.3, 0.7), "ride": (1.0, 0.6)}  # (normal, tired)
 WALK_LIMIT_KM = {"relaxed": 4, "normal": 6, "packed": 10}  # most walking in a walk-only day
+ACTIVITY_LIMIT_MIN = {"relaxed": 240, "normal": 330, "packed": 450}  # most sightseeing in a day
+REST_KINDS = {"meal", "snack"}  # stops that rest the traveler instead of tiring them
 RIDE_PICKUP_MIN = 4
 SWITCH_POINTS = 5            # cost of moving to another neighborhood
 TRAVEL_POINTS_PER_MIN = 0.03  # mild pressure against zigzagging
@@ -340,6 +343,16 @@ def walk_left_m(s: Session) -> int | None:
         return None
     done = sum(x["leg"]["km"] for x in s.completed if x["leg"]["mode"] == "walk")
     return round((WALK_LIMIT_KM[s.trip.get("pace", "normal")] - done) * 1000)
+
+
+def activity_min(s: Session, node: int) -> int:
+    """Minutes of sightseeing a stop adds to the day; meals and coffee breaks add none."""
+    return 0 if s.cand(node).kind in REST_KINDS else visit_len(s, node)
+
+
+def activity_left_min(s: Session) -> int:
+    """Minutes of sightseeing left in the day after the stops already done."""
+    return ACTIVITY_LIMIT_MIN[s.trip.get("pace", "normal")] - sum(activity_min(s, x["node"]) for x in s.completed)
 
 
 def walked_m(res: dict) -> int:
@@ -659,6 +672,13 @@ def solve(s: Session, t0: int, start_node: int, cand_nodes: list, time_limit_s: 
             lambda i, j: W[manager.IndexToNode(i)][manager.IndexToNode(j)])
         routing.AddDimension(walk_idx, 0, max(0, walk_left), True, "Walking")
 
+    # Sightseeing fits the pace's limit; stops that must be in the plan always fit.
+    required_min = sum(activity_min(s, k) for k in set(nodes[2:])
+                       if s.cand(k).must or s.cand(k).appointment_time is not None or k in s.locked)
+    activity_idx = routing.RegisterUnaryTransitCallback(
+        lambda i: activity_min(s, nodes[manager.IndexToNode(i)]) if manager.IndexToNode(i) >= 2 else 0)
+    routing.AddDimension(activity_idx, 0, max(activity_left_min(s), required_min), True, "Activity")
+
     copies = {}
     for li in range(2, n):
         k, idx = nodes[li], manager.NodeToIndex(li)
@@ -715,9 +735,11 @@ def naive(s: Session, t0: int, start_node: int, cand_nodes: list) -> list:
     """Baseline: go down Google's 'top attractions' list in order, skipping what doesn't fit."""
     order = sorted((k for k in cand_nodes if s.cand(k).score >= 40),
                    key=lambda k: (s.cand(k).list_rank, -s.cand(k).score))
-    route, left, walk_left = [], budget_left(s), walk_left_m(s)
+    route, left, walk_left, active_left = [], budget_left(s), walk_left_m(s), activity_left_min(s)
     for k in order:
         if left is not None and sum(s.cand(x).cost for x in route + [k]) > left:
+            continue
+        if sum(activity_min(s, x) for x in route + [k]) > active_left:
             continue
         res = simulate(s, route + [k], t0, start_node)
         if res and (walk_left is None or walked_m(res) <= walk_left):
@@ -737,6 +759,7 @@ def cut_reasons(s: Session, cand_nodes: list, route: list, t0: int) -> list:
         return L["km"] * 1000 if L["mode"] == "walk" else 0
     path = list(zip([s.loc] + route, route + [s.end_node]))
     walking = sum(walk_m(a, b) for a, b in path)
+    active_left = activity_left_min(s) - sum(activity_min(s, k) for k in route)
     out = []
     for k in cand_nodes:
         if k in in_plan:
@@ -763,6 +786,8 @@ def cut_reasons(s: Session, cand_nodes: list, route: list, t0: int) -> list:
         elif walk_left is not None and walking + min(
                 walk_m(a, k) + walk_m(k, b) - walk_m(a, b) for a, b in path) > walk_left:
             why = f"Would go over your {WALK_LIMIT_KM[s.trip.get('pace', 'normal')]} km walking limit"
+        elif activity_min(s, k) > active_left:
+            why = f"Would pack too much into a {s.trip.get('pace', 'normal')}-pace day"
         elif c.kind == "snack" and any(s.cand(x).kind == "snack" for x in in_plan):
             why = "One snack stop is enough for the day"
         elif c.setting == "outdoor" and not allowed_starts(s, k, t0, weather="dry"):
