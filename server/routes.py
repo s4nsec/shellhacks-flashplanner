@@ -5,12 +5,15 @@ Matrix limits: 625 origin-destination pairs per request in general, 100 for
 TRANSIT. Requests are split by origin rows and sent in parallel.
 """
 import asyncio
+import logging
 import math
 from datetime import datetime, timedelta
 
 import httpx
 
 from . import config
+
+log = logging.getLogger("flashplanner")
 
 MATRIX_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix"
 ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
@@ -75,11 +78,33 @@ async def matrix(http: httpx.AsyncClient, pts: list[tuple[float, float]], mode: 
 
 
 async def polyline(http: httpx.AsyncClient, a: tuple[float, float], b: tuple[float, float],
-                   mode: str) -> str | None:
-    """Encoded polyline for one leg, so the map draws real streets and métro lines."""
+                   mode: str, departure_iso: str | None = None) -> str | None:
+    """Encoded polyline for one leg, so the map draws real streets and métro lines.
+    Transit needs the leg's own departure time: without one Google plans for right now,
+    and late at night or on another day that often means no route and a straight line."""
     body = {"origin": _loc(a), "destination": _loc(b), "travelMode": mode}
+    if mode == "TRANSIT" and departure_iso:
+        body["departureTime"] = departure_iso
     r = await http.post(ROUTES_URL, json=body, headers={
         "X-Goog-Api-Key": config.MAPS_KEY, "X-Goog-FieldMask": "routes.polyline.encodedPolyline"})
     r.raise_for_status()
     routes = r.json().get("routes", [])
     return routes[0]["polyline"]["encodedPolyline"] if routes else None
+
+
+async def leg_shape(http: httpx.AsyncClient, a: tuple[float, float], b: tuple[float, float],
+                    mode: str, departure_iso: str | None = None) -> str | None:
+    """A polyline that follows the streets, falling back when the leg's own mode has none:
+    transit tries the next departure Google knows, then the walking path."""
+    tries = [(mode, departure_iso)]
+    if mode == "TRANSIT":
+        tries += [("TRANSIT", None)] * bool(departure_iso) + [("WALK", None)]
+    for m, dep in tries:
+        try:
+            shape = await polyline(http, a, b, m, dep)
+        except httpx.HTTPError as e:
+            log.warning("computeRoutes %s failed: %s", m, e)
+            continue
+        if shape:
+            return shape
+    return None
