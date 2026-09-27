@@ -5,22 +5,49 @@ which places suit them, reading reviews for visit lengths, turning free-text
 updates into a function call, and explaining the plan. It never does the route
 math; OR-Tools does that in planner.py.
 """
+import contextvars
 import json
+import os
 import typing
 
 from google import genai
+from google.auth import identity_pool
 from google.genai import types
 from pydantic import BaseModel
 
 from . import config
 
 _client = None
+# Vercel sends a short-lived OIDC token with each request (x-vercel-oidc-token
+# header); main.py stores it here. `vercel env pull` puts one in VERCEL_OIDC_TOKEN
+# for local runs.
+vercel_oidc_token = contextvars.ContextVar("vercel_oidc_token", default="")
+
+
+class VercelOidcToken(identity_pool.SubjectTokenSupplier):
+    def get_subject_token(self, context, request):
+        return vercel_oidc_token.get() or os.getenv("VERCEL_OIDC_TOKEN", "")
+
+
+def vercel_credentials() -> identity_pool.Credentials:
+    """Credentials that trade Vercel's OIDC token for the service account's, via Google STS."""
+    return identity_pool.Credentials(
+        audience=f"//iam.googleapis.com/projects/{config.GCP_PROJECT_NUMBER}/locations/global/"
+                 f"workloadIdentityPools/{config.GCP_WORKLOAD_IDENTITY_POOL_ID}/"
+                 f"providers/{config.GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID}",
+        subject_token_type="urn:ietf:params:oauth:token-type:jwt",
+        subject_token_supplier=VercelOidcToken(),
+        service_account_impersonation_url="https://iamcredentials.googleapis.com/v1/projects/-/"
+                                          f"serviceAccounts/{config.GCP_SERVICE_ACCOUNT_EMAIL}:generateAccessToken",
+        scopes=["https://www.googleapis.com/auth/cloud-platform"],
+    )
 
 
 def client() -> genai.Client:
     global _client
     if _client is None:
-        _client = genai.Client(api_key=config.GEMINI_API_KEY or None)
+        credentials = vercel_credentials() if config.GCP_SERVICE_ACCOUNT_EMAIL else None
+        _client = genai.Client(api_key=config.GEMINI_API_KEY or None, credentials=credentials)
     return _client
 
 

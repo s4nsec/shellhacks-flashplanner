@@ -79,13 +79,13 @@ body{overflow:hidden}
 @keyframes fade{from{opacity:0}}
 
 @media (min-width:900px){
-  .map-stage{left:420px}
-  .card-view{top:0;right:auto;width:420px;max-height:none;border:0;border-right:1px solid var(--line);border-radius:0;box-shadow:none;padding:1.25rem 1.25rem 0}
+  .map-stage{left:var(--pane-w,420px)}
+  .card-view{top:0;right:auto;width:var(--pane-w,420px);max-height:none;border:0;border-right:1px solid var(--line);border-radius:0;box-shadow:none;padding:1.25rem 1.25rem 0}
   .wizard-actions{bottom:0;margin:1.5rem -1.25rem 0;padding:1rem 1.25rem}
 }
 @media (min-width:1200px){
-  .map-stage{left:460px}
-  .card-view{width:460px}
+  .map-stage{left:var(--pane-w,460px)}
+  .card-view{width:var(--pane-w,460px)}
 }
 
 /* ---- calmer controls: thinner borders, lighter weights, less boxing ---- */

@@ -22,6 +22,7 @@
 .sheet-grip{flex:none;display:grid;place-items:center;width:100%;min-height:28px;border:0;background:none;cursor:grab;touch-action:none}
 .sheet-grip span{width:40px;height:5px;border-radius:3px;background:var(--muted)}
 .sheet-grip:focus-visible{outline-offset:-3px;border-radius:16px 16px 0 0}
+.pane-resize{display:none}
 .sheet-head{flex:none;padding:0 1rem .75rem;border-bottom:1px solid var(--line);touch-action:none}
 .sheet-bar{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.75rem;align-items:center}
 .icon-btn{display:grid;place-items:center;width:44px;height:44px;border:1px solid var(--line);border-radius:8px;background:var(--land);color:var(--ink);cursor:pointer}
@@ -59,11 +60,15 @@
 .behind-plan #tracePanel{margin:0;padding:0;border:0;background:none}
 
 @media (min-width:900px){
-  .sheet{top:0;right:auto;width:420px;height:auto!important;border:0;border-right:1px solid var(--line);border-radius:0;box-shadow:none;padding-bottom:0}
+  .sheet{top:0;right:auto;width:var(--pane-w,420px);height:auto!important;border:0;border-right:1px solid var(--line);border-radius:0;box-shadow:none;padding-bottom:0}
   .sheet-grip{display:none}
+  .pane-resize{display:block;position:absolute;z-index:1;top:0;bottom:0;right:-6px;width:12px;cursor:col-resize;touch-action:none}
+  .pane-resize::after{content:"";position:absolute;top:0;bottom:0;left:5px;width:2px;transition:background .15s}
+  .pane-resize:hover::after,.pane-resize:focus-visible::after,.sheet.dragging .pane-resize::after{background:var(--blue)}
+  .pane-resize:focus-visible{outline:0}
   .sheet-head{padding:1rem 1.25rem .75rem}
   .sheet-body{padding:1rem 1.25rem 2rem}
 }
 @media (min-width:1200px){
-  .sheet{width:460px}
+  .sheet{width:var(--pane-w,460px)}
 }

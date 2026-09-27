@@ -13,6 +13,12 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 # GOOGLE_CLOUD_LOCATION to call Gemini on Vertex AI with application default
 # credentials (gcloud auth application-default login). The SDK reads these itself.
 USE_VERTEX = os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in ("true", "1")
+# On Vercel there are no application default credentials. Set these to swap
+# Vercel's OIDC token for a service account's credentials (Workload Identity Federation).
+GCP_PROJECT_NUMBER = os.getenv("GCP_PROJECT_NUMBER", "")
+GCP_WORKLOAD_IDENTITY_POOL_ID = os.getenv("GCP_WORKLOAD_IDENTITY_POOL_ID", "")
+GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID = os.getenv("GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID", "")
+GCP_SERVICE_ACCOUNT_EMAIL = os.getenv("GCP_SERVICE_ACCOUNT_EMAIL", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
 # Server-side key for Places API (New) and Routes API. Never sent to the browser.
