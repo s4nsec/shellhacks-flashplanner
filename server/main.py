@@ -47,6 +47,16 @@ async def keep_vercel_oidc_token(request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def revalidate_page_and_assets(request, call_next):
+    # Without this, browsers guess a lifetime and keep running old JS/CSS after an edit.
+    # "no-cache" still caches, but checks the ETag first, so unchanged files come back 304.
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/assets/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 # ---------- small helpers ----------
 
 def to_min(hhmm: str | None, default: int) -> int:
