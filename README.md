@@ -114,6 +114,9 @@ Constants at the top of `server/planner.py`:
 - `WALK_CAP_KM`: longest leg that's always walked, per mode.
 - `WALK_LIMIT_KM`: most walking in a "Walk only" day, by pace. Walking already
   done counts toward it when the day is re-planned.
+- `ACTIVITY_LIMIT_MIN`: most sightseeing time in a day, by pace, so a long day
+  still leaves room to rest. Meals and coffee breaks don't count, and must-see
+  places, reservations, and locked stops always fit.
 - `MEAL_EARLY_MIN`, `MEAL_LATE_MIN`: how long before and after each requested
   meal time a sit-down meal may start. Meals come from the trip's `meals` list, which defaults to
   lunch at 12:30 and dinner at 19:00; add breakfast, change the times, or send
