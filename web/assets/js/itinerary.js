@@ -7,6 +7,7 @@ function renderAll(){
   maps.title=stops.length>9?"Google Maps supports up to 9 waypoints; this link includes the first 9.":"Open this route in Google Maps";
   $("#icsBtn").disabled=false;
   $("#copyBtn").disabled=!S.plan;
+  $("#imageBtn").disabled=!S.plan;
   renderHeading();Tune.chips();renderLive();
   // Listings take a web search, so start it now rather than when the stop opens.
   if(S.sid)stops.filter(st=>st.venue&&!st.done).forEach(st=>whatsOn(st).catch(()=>{}));

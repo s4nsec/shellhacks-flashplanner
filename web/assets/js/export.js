@@ -74,13 +74,106 @@ function itineraryCalendar(plans){
   lines.push("END:VCALENDAR");
   return lines.map(icsFold).join("\r\n")+"\r\n";
 }
+function fileName(ext){
+  const city=S.plan.city.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"trip";
+  return `${city}-${S.plan.date}-flashplanner.${ext}`;
+}
+function downloadBlob(blob,name){
+  const url=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),0);
+}
 function downloadCalendar(){
   if(!S.plan)return;
   const plans=S.days||[S.plan],blob=new Blob([itineraryCalendar(plans)],{type:"text/calendar;charset=utf-8"});
-  const url=URL.createObjectURL(blob),a=document.createElement("a");
-  const city=S.plan.city.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"trip";
-  a.href=url;a.download=`${city}-${S.plan.date}-flashplanner.ics`;document.body.appendChild(a);a.click();a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),0);
+  downloadBlob(blob,fileName("ics"));
+}
+
+/* ============ itinerary image ============ */
+function wrapLines(ctx,text,width){
+  const lines=[];let line="";
+  for(const word of text.split(" ")){
+    const next=line?`${line} ${word}`:word;
+    if(line&&ctx.measureText(next).width>width){lines.push(line);line=word;}
+    else line=next;
+  }
+  return lines.concat(line);
+}
+// One entry per block of text: an optional time and rail dot on the left, wrapped text on the right.
+function imageRows(plans){
+  const rows=[],many=plans.length>1;
+  plans.forEach((p,d)=>{
+    const endsAtStart=p.end_location.lat===p.hotel.lat&&p.end_location.lng===p.hotel.lng,sm=p.summary;
+    rows.push({text:many?`Day ${d+1} · ${p.date}`:p.date,size:20,weight:700,gap:d?36:0,head:true});
+    rows.push({time:fmt(p.depart??p.start),dot:"H",text:`Leave ${p.hotel.name}`,weight:700,gap:14});
+    planStops(p).forEach((st,i)=>{
+      rows.push({text:legText(st.leg),muted:true,size:14,gap:10});
+      rows.push({time:fmt(st.begin),dot:String(i+1),text:st.name,weight:700,gap:10});
+      rows.push({text:`Until ${fmt(st.leave)} · ${hm(st.visit.minutes)}`,muted:true,size:14,gap:2});
+    });
+    rows.push({text:legText(p.back),muted:true,size:14,gap:10});
+    rows.push({time:fmt(p.end),dot:endsAtStart?"H":"E",text:`Finish at ${p.end_location.name}`,weight:700,gap:10});
+    rows.push({text:`${sm.stops} stop${sm.stops===1?"":"s"}, ${sm.walk_km.toFixed(1)} km walking, ${hm(sm.moving)} getting around.`+
+      (sm.cost!=null?` About ${money(sm.cost,p.currency)} per person.`:""),muted:true,size:14,gap:16});
+  });
+  return rows;
+}
+async function itineraryCanvas(plans){
+  await document.fonts.ready;
+  const W=720,PAD=40,TIME=PAD+76,RAIL=PAD+100,TEXT=PAD+124,SCALE=2;
+  const color={ink:cssVar("--ink"),muted:cssVar("--muted"),blue:cssVar("--blue"),line:cssVar("--line"),panel:cssVar("--panel"),onBlue:cssVar("--on-blue")};
+  const font=(weight,size)=>`${weight} ${size}px Archivo, system-ui, sans-serif`;
+  const canvas=document.createElement("canvas"),ctx=canvas.getContext("2d");
+  // Lay out first so the canvas can be sized to fit, then draw.
+  let y=PAD+96;
+  const rows=imageRows(plans).map(r=>{
+    const size=r.size||16,lh=Math.round(size*1.4);
+    ctx.font=font(r.weight||400,size);
+    const lines=wrapLines(ctx,r.text,W-PAD-(r.head?PAD:TEXT));
+    y+=r.gap;const top=y;y+=lines.length*lh;
+    return {...r,size,lh,lines,top};
+  });
+  const H=y+PAD+28;
+  canvas.width=W*SCALE;canvas.height=H*SCALE;ctx.scale(SCALE,SCALE);
+  ctx.fillStyle=color.panel;ctx.fillRect(0,0,W,H);
+  ctx.textBaseline="top";
+  ctx.fillStyle=color.blue;ctx.font=font(700,14);ctx.fillText("FLASHPLANNER",PAD,PAD);
+  ctx.fillStyle=color.ink;ctx.font=font(700,30);
+  ctx.fillText(plans.length>1?`${plans.length} days in ${plans[0].city}`:`Your day in ${plans[0].city}`,PAD,PAD+26);
+  // The rail joins each day's dots, so draw it before them.
+  let prev=null;
+  rows.forEach(r=>{
+    if(r.head)prev=null;
+    if(!r.dot)return;
+    const cy=r.top+r.lh/2;
+    if(prev!=null){ctx.strokeStyle=color.line;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(RAIL,prev);ctx.lineTo(RAIL,cy);ctx.stroke();}
+    prev=cy;
+  });
+  rows.forEach(r=>{
+    ctx.font=font(r.weight||400,r.size);ctx.fillStyle=r.muted?color.muted:color.ink;
+    r.lines.forEach((line,i)=>ctx.fillText(line,r.head?PAD:TEXT,r.top+i*r.lh+2));
+    if(!r.dot)return;
+    const cy=r.top+r.lh/2;
+    ctx.textAlign="right";ctx.fillStyle=color.muted;ctx.font=font(400,14);ctx.fillText(r.time,TIME,cy-8);
+    ctx.fillStyle=color.blue;ctx.beginPath();ctx.arc(RAIL,cy,12,0,Math.PI*2);ctx.fill();
+    ctx.textAlign="center";ctx.fillStyle=color.onBlue;ctx.font=font(700,12);ctx.fillText(r.dot,RAIL,cy-7);
+    ctx.textAlign="left";
+  });
+  ctx.fillStyle=color.muted;ctx.font=font(400,12);
+  ctx.fillText("Planned with FlashPlanner · places from Google Maps",PAD,H-PAD);
+  return canvas;
+}
+// Phones get the share sheet; elsewhere the PNG downloads.
+async function saveImage(){
+  if(!S.plan)return;
+  const canvas=await itineraryCanvas(S.days||[S.plan]);
+  const blob=await new Promise(done=>canvas.toBlob(done,"image/png"));
+  const file=new File([blob],fileName("png"),{type:"image/png"});
+  if(matchMedia("(pointer:coarse)").matches&&navigator.canShare?.({files:[file]})){
+    try{await navigator.share({files:[file],title:`FlashPlanner plan for ${S.plan.city}`});return;}
+    catch(err){if(err.name==="AbortError")return;}
+  }
+  downloadBlob(blob,file.name);
 }
 async function copyPlan(){
   if(!S.plan)return;
