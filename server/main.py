@@ -554,6 +554,7 @@ async def plan_stream(req: TripRequest, persist: bool = True,
                     list_rank=rank.get(p["id"], 999), hood=places.neighborhood(p),
                     score=score, kind=kind,
                     setting=j.setting if j and j.setting in planner.RAIN_FACTOR else "indoor",
+                    daylight=bool(j and j.daylight),
                     reason=mismatch or (j.reason if j else ""), must=must,
                     appointment_time=appointment_times.get(p["id"]),
                     accessibility=p.get("accessibilityOptions", {}),
@@ -637,6 +638,7 @@ async def plan_stream(req: TripRequest, persist: bool = True,
                     if c.zone_name in avoid_zones and not (c.must or c.appointment_time is not None):
                         c.score = max(0, c.score - 20)
             sunset = planner.sunset_minutes(hotel["lat"], hotel["lng"], day, utc_offset)
+            sunrise = planner.sunrise_minutes(hotel["lat"], hotel["lng"], day, utc_offset)
             zones = sorted({c.zone_name for c in shortlist})
             yield step_ok("hours", t0,
                           f"{closed} closed on {day.strftime('%A')}. {len(zones)} neighborhoods. "
@@ -706,7 +708,7 @@ async def plan_stream(req: TripRequest, persist: bool = True,
                 utc_offset=utc_offset, sunset=sunset, hotel=hotel,
                 end_location=end_location, end_node=end_node, cands=shortlist,
                 walk=walk, walk_m=walk_m, transit=transit, drive=drive,
-                start=start_min, deadline=deadline, drive_m=drive_m, now=start_min, loc=0,
+                start=start_min, deadline=deadline, drive_m=drive_m, sunrise=sunrise, now=start_min, loc=0,
                 forecast=forecast, rain_hours=rain_hours, currency=scored.currency)
             for c in shortlist:
                 del c._raw
