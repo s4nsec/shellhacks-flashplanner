@@ -59,3 +59,34 @@ Sheet.grip.addEventListener("keydown",e=>{
 });
 Sheet.wide.addEventListener("change",()=>{Sheet.open();MapView.fit();});
 window.addEventListener("resize",()=>{if(!$("#resultsView").hidden)Sheet.set(Sheet.snap,{refit:false});});
+
+// On desktop the pane's right edge drags (or arrow-keys) wider or narrower; the map takes the rest.
+const PaneResize={
+  el:$("#paneResize"),drag:null,MIN:320,
+  max(){return Math.max(this.MIN,window.innerWidth-360);},
+  set(w){
+    w=Math.round(Math.max(this.MIN,Math.min(this.max(),w)));
+    document.documentElement.style.setProperty("--pane-w",w+"px");
+    this.el.setAttribute("aria-valuemin",this.MIN);this.el.setAttribute("aria-valuemax",this.max());this.el.setAttribute("aria-valuenow",w);
+  },
+  start(e){
+    if(e.button>0)return;
+    e.preventDefault();this.el.setPointerCapture(e.pointerId);
+    this.drag={x:e.clientX,w:Sheet.el.offsetWidth,id:e.pointerId};
+    Sheet.el.classList.add("dragging");
+  },
+  move(e){const d=this.drag;if(d&&e.pointerId===d.id)this.set(d.w+e.clientX-d.x);},
+  end(e){
+    const d=this.drag;if(!d||e.pointerId!==d.id)return;
+    this.drag=null;Sheet.el.classList.remove("dragging");MapView.fit();
+  }
+};
+PaneResize.el.addEventListener("pointerdown",e=>PaneResize.start(e));
+PaneResize.el.addEventListener("pointermove",e=>PaneResize.move(e));
+PaneResize.el.addEventListener("pointerup",e=>PaneResize.end(e));
+PaneResize.el.addEventListener("pointercancel",e=>PaneResize.end(e));
+PaneResize.el.addEventListener("keydown",e=>{
+  const dir=e.key==="ArrowRight"?1:e.key==="ArrowLeft"?-1:0;if(!dir)return;
+  e.preventDefault();PaneResize.set(Sheet.el.offsetWidth+dir*24);MapView.fit();
+});
+window.addEventListener("resize",()=>{const w=parseFloat(document.documentElement.style.getPropertyValue("--pane-w"));if(w)PaneResize.set(w);});
