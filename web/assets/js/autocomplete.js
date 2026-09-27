@@ -62,6 +62,7 @@ function placeAutocomplete({inputId,listId,pickedId=null,liveId,stateKey=null,pr
     try{
       const place=pred.toPlace(),fields=["displayName","formattedAddress"];
       if(citiesOnly)fields.push("addressComponents");else fields.push("location");
+      if(citiesOnly)fields.push("viewport");
       if(withOffset)fields.push("utcOffsetMinutes");
       await place.fetchFields({fields});
       ac.token=null;
@@ -69,11 +70,13 @@ function placeAutocomplete({inputId,listId,pickedId=null,liveId,stateKey=null,pr
       if(citiesOnly){
         const country=place.addressComponents?.find(c=>c.types?.includes("country"))?.longText||cc.country;
         ac.input.value=[place.displayName||cc.city,country].filter(Boolean).join(", ");
-        PLACE_AC.biasCity=null;PLACE_AC.bias=null;StartAC.clear();EndAC.clear();announce(`${announcement} ${ac.input.value}`);return;
+        PLACE_AC.biasCity=null;PLACE_AC.bias=null;StartAC.clear();EndAC.clear();announce(`${announcement} ${ac.input.value}`);
+        if(place.viewport)MapView.preview({viewport:place.viewport});return;
       }
       const selected={place_id:place.id,name:place.displayName||label,lat:place.location.lat(),lng:place.location.lng()};
       if(withOffset)selected.utc_offset_minutes=place.utcOffsetMinutes??null;
       S[stateKey]=selected;ac.picked.textContent=place.formattedAddress||"";
+      if(stateKey==="startPlace")MapView.preview({point:{lat:selected.lat,lng:selected.lng}});
       announce(`${announcement} ${selected.name}`);
     }catch(e){console.warn(e);announce("Couldn't load that place. We'll search for what you typed.");}
   };

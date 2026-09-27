@@ -45,12 +45,12 @@ function setStory(text,isError=false){  // status and errors show on the loading
 }
 function setBusy(b){
   S.busy=b;$("#planBtn").disabled=b;$("#demoBtn").disabled=b;
-  $("#planBtn").innerHTML=b?"Building your route…":"Build route <span aria-hidden=\"true\">→</span>";
+  $("#planBtn").textContent=b?"Planning…":"Plan my day";
   $("#loadingBack").disabled=b;
 }
 function formError(message=""){
   const box=$("#formError");box.textContent=message;box.hidden=!message;
   $("#city").setAttribute("aria-invalid",String(Boolean(message)));
-  if(message){showView("setup",false);$("#city").focus();$("#city").scrollIntoView({block:"center"});}
+  if(message){Wizard.step=0;showView("setup",false);$("#city").focus();}
 }
 

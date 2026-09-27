@@ -5,8 +5,8 @@ async function planDay(){
     return;
   }
   formError();
-  if(S.busy)return;setBusy(true);traceReset();showView("loading");
-  S.days=null;S.activeDay=0;
+  if(S.busy)return;setBusy(true);traceReset();showView("loading");LiveMap.reset();
+  S.days=null;S.activeDay=0;S.live=false;S.detailId=null;
   try{
     const text=$("#msg").value.trim();
     if(!text){undoNotes();S.lastParsed=null;}
@@ -28,7 +28,7 @@ async function planDay(){
 }
 async function loadDemo(){
   if(S.busy)return;setBusy(true);traceReset();showView("loading");
-  S.days=null;S.activeDay=0;
+  S.days=null;S.activeDay=0;S.live=false;S.detailId=null;
   try{
     traceStep({key:"demo",status:"run",title:"Load judge demo",call:"GET /api/demo",source:"server/main.py: demo_plan()"});
     const t0=performance.now();
@@ -62,6 +62,7 @@ async function replan(event,delay=30,preStep=null,placeId=null){
 }
 function handleEvent(e){
   if(e.type==="step")traceStep(e);
+  else if(e.type==="places")LiveMap.add(e.places,e.stage);
   else if(e.type==="plan"){
     if(e.multi_day){S.days=e.days;S.activeDay=0;S.plan=S.days[0];}
     else{S.plan=e;if(S.days)S.days[S.activeDay]=e;}

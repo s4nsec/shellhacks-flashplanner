@@ -1,9 +1,7 @@
 /* ============ results: full-screen map with the itinerary in a sheet ============ */
-body[data-view=results]{overflow:hidden}
-body[data-view=results] .top{display:none}
-.results-view{position:fixed;inset:0;z-index:5;padding:0;animation:none}
+.results-view{position:fixed;inset:0;z-index:5;padding:0;animation:none;pointer-events:none}
+.results-view .sheet{pointer-events:auto}
 
-.results-map{position:absolute;inset:0;background:var(--land)}
 #gmap{position:absolute;inset:0;width:auto;height:auto;min-height:0;max-height:none;border-radius:0}
 #svgmap{width:100%;height:100%;border-radius:0}
 .map-legend{
@@ -65,9 +63,7 @@ body[data-view=results] .top{display:none}
   .sheet-grip{display:none}
   .sheet-head{padding:1rem 1.25rem .75rem}
   .sheet-body{padding:1rem 1.25rem 2rem}
-  .results-map{left:420px}
 }
 @media (min-width:1200px){
   .sheet{width:460px}
-  .results-map{left:460px}
 }

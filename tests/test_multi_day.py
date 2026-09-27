@@ -54,6 +54,24 @@ class MultiDayStreamTests(unittest.TestCase):
         self.assertEqual(["s1", "s2"], [d["session_id"] for d in events[-1]["days"]])
         self.assertEqual("day-2-find", events[1]["key"])
 
+    def test_candidate_places_pass_through_with_their_day(self):
+        async def fake_plan_stream(req, exclude_place_ids=None, avoid_zones=None):
+            yield json.dumps({"type": "places", "stage": "found",
+                              "places": [{"id": "p", "name": "P", "lat": 1, "lng": 2}]}) + "\n"
+            yield json.dumps({"type": "plan", "session_id": "s", "date": req.date,
+                              "completed": [], "stops": []}) + "\n"
+
+        req = TripRequest(city="Montreal", date="2026-10-01", days=2)
+        async def collect():
+            return [json.loads(line) async for line in main.multi_day_plan_stream(req)]
+
+        with mock.patch.object(main, "plan_stream", fake_plan_stream):
+            events = asyncio.run(collect())
+
+        places = [e for e in events if e["type"] == "places"]
+        self.assertEqual([1, 2], [e["day"] for e in places])
+        self.assertEqual("found", places[0]["stage"])
+
 
 if __name__ == "__main__":
     unittest.main()

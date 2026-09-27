@@ -7,7 +7,7 @@ function renderAll(){
   maps.title=stops.length>9?"Google Maps supports up to 9 waypoints; this link includes the first 9.":"Open this route in Google Maps";
   $("#icsBtn").disabled=false;
   $("#copyBtn").disabled=!S.plan;
-  renderHeading();
+  renderHeading();Tune.chips();renderLive();
   showView("results",false);
   // A re-plan from a stop's detail (Keep in plan) comes back to that stop.
   const again=S.detailId!=null?planStops(S.plan).findIndex(st=>st.id===S.detailId):-1;

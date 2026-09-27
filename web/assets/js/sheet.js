@@ -11,7 +11,8 @@ const Sheet={
   },
   // How much of the map the sheet hides, so the route can be fitted above it.
   cover(){
-    if(this.wide.matches||$("#resultsView").hidden)return 0;
+    if(this.wide.matches)return 0;
+    if($("#resultsView").hidden){const card=$(".card-view:not([hidden])");return card?card.offsetHeight:0;}
     const h=this.heights();return this.snap==="full"?h.half:h[this.snap];
   },
   set(snap,{refit=true}={}){

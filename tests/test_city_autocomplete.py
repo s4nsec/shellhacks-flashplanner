@@ -10,7 +10,7 @@ PAGE = "\n".join(p.read_text(encoding="utf-8")
 
 class CityAutocompleteTests(unittest.TestCase):
     def test_city_field_is_an_accessible_combobox(self):
-        self.assertIn('id="city" placeholder="Montreal, Canada"', PAGE)
+        self.assertIn('id="city" class="big-input" placeholder="Search a city, like Montreal, Canada"', PAGE)
         self.assertIn('aria-controls="cityList"', PAGE)
         self.assertIn('id="cityList" class="ac-list" role="listbox"', PAGE)
 

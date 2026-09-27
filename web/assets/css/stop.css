@@ -16,7 +16,7 @@
 .stop-detail .eyebrow{margin-bottom:.35rem}
 .detail-nav{display:flex;align-items:center;justify-content:space-between;margin:-.5rem 0 .75rem}
 .detail-nav .text-btn{padding:0}
-.detail-nav .text-btn::before{content:"‹ ";text-decoration:none}
+.detail-nav .text-btn::before{content:"‹";margin-right:.3rem}
 .detail-step{display:flex;gap:.5rem}
 .detail-step .icon-btn{font-size:1.3rem;line-height:1}
 .detail-step .icon-btn:disabled{opacity:.4;cursor:default}

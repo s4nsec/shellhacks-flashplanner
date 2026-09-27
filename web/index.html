@@ -13,160 +13,158 @@
 <link rel="stylesheet" href="/assets/css/itinerary.css">
 <link rel="stylesheet" href="/assets/css/results.css">
 <link rel="stylesheet" href="/assets/css/stop.css">
+<link rel="stylesheet" href="/assets/css/wizard.css">
 </head>
 <body>
 
-<header class="top">
-  <a class="brand" href="#" id="brandHome" aria-label="FlashPlanner home">
-    <svg width="42" height="42" viewBox="0 0 46 46" aria-hidden="true">
-      <circle cx="23" cy="23" r="21" fill="none" stroke="currentColor" stroke-width="4"/>
-      <path d="M8 30 L18 16 L28 26 L38 12" fill="none" stroke="var(--blue)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-      <circle cx="18" cy="16" r="3.2" fill="var(--panel)" stroke="currentColor" stroke-width="2"/>
-      <circle cx="28" cy="26" r="3.2" fill="var(--panel)" stroke="currentColor" stroke-width="2"/>
-      <circle cx="38" cy="12" r="3.2" fill="var(--gold)" stroke="currentColor" stroke-width="2"/>
-    </svg>
-    <span>FlashPlanner</span>
-  </a>
-</header>
+<div class="map-stage" id="mapPane" role="region" aria-label="Map">
+  <div id="gmap"></div>
+  <p class="map-empty" id="mapEmpty">Your route will be drawn here.</p>
+  <div class="legend map-legend" aria-label="Line styles" hidden>
+    <span><i class="lw"></i>Walk</span><span><i class="lt"></i>Transit</span><span><i class="lr"></i>Ride</span>
+  </div>
+</div>
 
 <main class="app-shell">
-  <section class="view setup-view" id="setupView" aria-labelledby="setupTitle">
-    <div class="setup-hero">
-      <p class="eyebrow">A city day, actually doable</p>
-      <h1 id="setupTitle">Go farther.<br><em>Backtrack less.</em></h1>
-      <p>Tell us your non-negotiables. We’ll read the reviews, watch the weather, and stitch together a route that fits.</p>
+  <section class="view setup-view card-view" id="setupView" aria-labelledby="setupTitle">
+    <div class="setup-top">
+      <a class="brand" href="#" id="brandHome" aria-label="FlashPlanner, start over">
+        <svg width="32" height="32" viewBox="0 0 46 46" aria-hidden="true">
+          <circle cx="23" cy="23" r="21" fill="none" stroke="currentColor" stroke-width="4"/>
+          <path d="M8 30 L18 16 L28 26 L38 12" fill="none" stroke="var(--blue)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="18" cy="16" r="3.2" fill="var(--panel)" stroke="currentColor" stroke-width="2"/>
+          <circle cx="28" cy="26" r="3.2" fill="var(--panel)" stroke="currentColor" stroke-width="2"/>
+          <circle cx="38" cy="12" r="3.2" fill="var(--gold)" stroke="currentColor" stroke-width="2"/>
+        </svg>
+        <span>FlashPlanner</span>
+      </a>
+      <p class="step-count" id="stepCount" aria-live="polite"></p>
     </div>
+    <h1 class="sr-only">Plan a day in a new city</h1>
+    <div class="step-bar" aria-hidden="true"><span id="stepBar"></span></div>
 
-    <div class="setup-layout">
-      <section class="panel trip-form" id="tripForm" aria-labelledby="h-trip">
-        <div class="form-intro">
-          <span class="step-no">01</span>
-          <div><h2 id="h-trip">Build your route</h2><p>About a minute. Every choice stays editable.</p></div>
-        </div>
-
-        <div class="form-section">
-          <h3>Where &amp; when</h3>
-          <div class="ac"><label for="city">City</label><input type="text" id="city" placeholder="Montreal, Canada"
+    <form class="trip-form" id="tripForm" novalidate>
+      <div class="wstep" data-step="0">
+        <h2 id="setupTitle" class="wstep-title" tabindex="-1">Where are you spending the day?</h2>
+        <div class="ac"><label for="city" class="sr-only">City</label>
+          <input type="text" id="city" class="big-input" placeholder="Search a city, like Montreal, Canada"
             role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="cityList" aria-describedby="cityLive" autocomplete="off">
-            <ul id="cityList" class="ac-list" role="listbox" aria-label="Suggested cities" hidden></ul>
-            <p id="cityLive" class="sr-only" aria-live="polite"></p></div>
-          <div class="row2">
-            <div><label for="date">First day</label><input type="date" id="date"></div>
-            <div><label for="days">Days</label><input type="number" id="days" min="1" max="7" value="1"></div>
-          </div>
-          <div class="day-windows" id="dayWindows"></div>
-          <div class="row2">
-            <div class="ac"><label for="startLoc">Start at</label><input type="text" id="startLoc" placeholder="Hotel or address"
-              role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="startLocList" aria-describedby="startLocPicked" autocomplete="off">
-              <ul id="startLocList" class="ac-list" role="listbox" aria-label="Suggested places" hidden></ul>
-              <p id="startLocPicked" class="picked"></p><p id="startLocLive" class="sr-only" aria-live="polite"></p></div>
-            <div class="ac"><label for="endLoc">Finish at</label><input type="text" id="endLoc" placeholder="Airport, hotel…"
-              role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="endLocList" aria-describedby="endLocPicked" autocomplete="off">
-              <ul id="endLocList" class="ac-list" role="listbox" aria-label="Suggested finishing places" hidden></ul>
-              <p id="endLocPicked" class="picked"></p><p id="endLocLive" class="sr-only" aria-live="polite"></p></div>
-          </div>
-          <div class="row2">
-            <div><label for="tStart">Start</label><input type="time" id="tStart" value="10:00"></div>
-            <div><label for="tEnd">Finish by</label><input type="time" id="tEnd" value="19:00"></div>
-          </div>
-        </div>
-
-        <div class="form-section">
-          <h3>Your kind of day</h3>
-          <fieldset>
-            <legend class="lbl">Interests <span class="hint">tap once to love, twice to skip</span></legend>
-            <div class="chips" id="chips"></div>
-            <label for="moreInterests">Something else?</label>
-            <input type="text" id="moreInterests" placeholder="Jazz bars, bagels, brutalism…">
-          </fieldset>
-          <label for="mustSee">Must-see places</label>
-          <input type="text" id="mustSee" placeholder="Comma-separated place names">
-          <fieldset>
-            <legend class="lbl">Getting around</legend>
-            <div class="seg" id="modeSeg">
-              <button type="button" data-mode="walk">Walk only</button>
-              <button type="button" data-mode="transit">Walk + transit</button>
-              <button type="button" data-mode="ride">Walk + ride</button>
-            </div>
-          </fieldset>
-          <fieldset>
-            <legend class="lbl">Route style</legend>
-            <div class="seg seg2" id="styleSeg">
-              <button type="button" data-blocks="0">Most stops</button>
-              <button type="button" data-blocks="1">By neighborhood</button>
-            </div>
-          </fieldset>
-        </div>
-
-        <div class="form-section">
-          <h3>Comfort &amp; constraints</h3>
-          <div class="row2">
-            <div><label for="pace">Pace</label><select id="pace">
-              <option value="relaxed">Relaxed</option><option value="normal" selected>Normal</option><option value="packed">Packed</option>
-            </select></div>
-            <div><label for="budget">Daily budget</label><input type="number" id="budget" min="0" step="1" placeholder="No limit"></div>
-          </div>
-          <p class="hint">Budget is per person for tickets and meals, in local currency.</p>
-          <div class="row2 align-end">
-            <label class="check"><input type="checkbox" id="wheelchair">Wheelchair accessible</label>
-            <div><label for="diet">Dietary preference</label><select id="diet">
-              <option value="">None</option><option value="vegetarian">Vegetarian</option><option value="vegan">Vegan</option>
-            </select></div>
-          </div>
-          <details class="more">
-            <summary>More ways to steer the route</summary>
-            <label for="userList">Plan only from a list you found online</label>
-            <textarea id="userList" rows="5" placeholder="Mount Royal&#10;Notre-Dame Basilica&#10;Jean-Talon Market"></textarea>
-            <p class="hint">One place per line. Must-sees are still included.</p>
-            <label for="msg">Anything else? <span class="hint">optional</span></label>
-            <textarea id="msg" rows="3" placeholder="Avoid steep hills, prefer quiet places, dinner booked at 7:30…"></textarea>
-            <p class="hint">Use this for bookings or details the settings don’t cover.</p>
-          </details>
-        </div>
-
-        <p class="form-error" id="formError" role="alert" hidden></p>
-        <div class="actions setup-actions">
-          <button class="primary" id="planBtn" type="button">Build route <span aria-hidden="true">→</span></button>
-          <button class="secondary" id="demoBtn" type="button" aria-label="Try judge demo">Demo</button>
-        </div>
-      </section>
-
-      <aside class="trip-ticket" aria-label="Trip preview">
-        <div class="ticket-top"><span>FLASH / TRIP</span><span>LIVE BRIEF</span></div>
-        <p class="ticket-label">Destination</p><strong id="ticketCity">Pick a city</strong>
-        <div class="ticket-route" aria-hidden="true"><i></i><span></span><i></i></div>
-        <div class="ticket-grid">
-          <div><span>Window</span><b id="ticketTiming">10:00–19:00</b></div>
-          <div><span>Travel</span><b id="ticketMode">Transit</b></div>
-        </div>
-        <p class="ticket-vibe" id="ticketVibe">Architecture · Food · Views</p>
-        <small>Your brief updates as you choose. Nothing is booked or shared.</small>
-      </aside>
-    </div>
-  </section>
-
-  <section class="view loading-view" id="loadingView" aria-labelledby="loadingTitle" hidden>
-    <div class="loading-shell">
-      <p class="eyebrow">Route lab in progress</p>
-      <h1 id="loadingTitle">Making the city<br><em>fit your clock.</em></h1>
-      <div class="route-loader" aria-hidden="true">
-        <svg viewBox="0 0 520 120"><path class="route-base" d="M8 92 C90 15 145 108 224 50 S360 108 510 22"/><path class="route-live" d="M8 92 C90 15 145 108 224 50 S360 108 510 22"/></svg>
-        <i class="load-dot d1"></i><i class="load-dot d2"></i><i class="load-dot d3"></i>
+          <ul id="cityList" class="ac-list" role="listbox" aria-label="Suggested cities" hidden></ul>
+          <p id="cityLive" class="sr-only" aria-live="polite"></p></div>
+        <p class="wstep-hint">We’ll pick the stops, order them, and fit them into your day.</p>
+        <button class="text-btn" id="demoBtn" type="button">See an example day in Montreal</button>
       </div>
-      <p id="loadingSummary" class="loading-summary" role="status" aria-live="polite">Opening the map and sharpening a pencil…</p>
-      <button id="loadingBack" class="text-btn" type="button" disabled>Back to edit</button>
-    </div>
-    <div id="loadingTraceSlot"></div>
+
+      <div class="wstep" data-step="1" hidden>
+        <h2 class="wstep-title" tabindex="-1">When are you going?</h2>
+        <div class="quick" id="dayQuick" role="group" aria-label="Day">
+          <button type="button" data-day="today" aria-pressed="true">Today</button>
+          <button type="button" data-day="tomorrow" aria-pressed="false">Tomorrow</button>
+          <button type="button" data-day="pick" aria-pressed="false">Pick a date</button>
+        </div>
+        <div id="dateWrap" hidden><label for="date">Date</label><input type="date" id="date"></div>
+        <div class="row2">
+          <div><label for="tStart">Start</label><input type="time" id="tStart" value="10:00"></div>
+          <div><label for="tEnd">Finish by</label><input type="time" id="tEnd" value="19:00"></div>
+        </div>
+        <label for="days">Days</label><input type="number" id="days" min="1" max="7" value="1" inputmode="numeric">
+        <div class="day-windows" id="dayWindows"></div>
+      </div>
+
+      <div class="wstep" data-step="2" hidden>
+        <h2 class="wstep-title" tabindex="-1">Where do you start?</h2>
+        <div class="ac"><label for="startLoc">Hotel or address</label><input type="text" id="startLoc" placeholder="Leave blank to start downtown"
+          role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="startLocList" aria-describedby="startLocPicked" autocomplete="off">
+          <ul id="startLocList" class="ac-list" role="listbox" aria-label="Suggested places" hidden></ul>
+          <p id="startLocPicked" class="picked"></p><p id="startLocLive" class="sr-only" aria-live="polite"></p></div>
+        <button class="secondary locate-btn" id="useLocation" type="button">Use my location</button>
+        <button class="text-btn" id="endToggle" type="button" aria-expanded="false" aria-controls="endWrap">Finish somewhere else</button>
+        <div id="endWrap" hidden>
+          <div class="ac"><label for="endLoc">Finish at</label><input type="text" id="endLoc" placeholder="Airport, station, restaurant…"
+            role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="endLocList" aria-describedby="endLocPicked" autocomplete="off">
+            <ul id="endLocList" class="ac-list" role="listbox" aria-label="Suggested finishing places" hidden></ul>
+            <p id="endLocPicked" class="picked"></p><p id="endLocLive" class="sr-only" aria-live="polite"></p></div>
+        </div>
+      </div>
+
+      <div class="wstep" data-step="3" hidden>
+        <h2 class="wstep-title" tabindex="-1">What are you into?</h2>
+        <fieldset>
+          <legend class="sr-only">Interests</legend>
+          <div class="chips" id="chips"></div>
+        </fieldset>
+        <label for="moreInterests">Something else?</label>
+        <input type="text" id="moreInterests" placeholder="Jazz bars, bagels, brutalism…">
+        <label for="mustSee">Places you don’t want to miss</label>
+        <input type="text" id="mustSee" placeholder="Comma-separated place names">
+      </div>
+
+      <div class="wstep" data-step="4" hidden>
+        <h2 class="wstep-title" tabindex="-1">How will you get around?</h2>
+        <div class="modes" id="modeSeg" role="group" aria-label="Getting around">
+          <button type="button" data-mode="walk"><span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4" r="2"/><path d="M11 21l2-6-3-3 1-5 3 3h3"/><path d="M8 13l-2 8"/></svg></span><b>Walk</b><small>On foot only</small></button>
+          <button type="button" data-mode="transit"><span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 11h14"/><circle cx="9" cy="14" r=".6" fill="currentColor"/><circle cx="15" cy="14" r=".6" fill="currentColor"/><path d="M8 21l2-4M16 21l-2-4"/></svg></span><b>Transit</b><small>Walk + bus and metro</small></button>
+          <button type="button" data-mode="ride"><span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v-4l2-5h12l2 5v4z"/><path d="M4 12h16"/><circle cx="7.5" cy="16.5" r="1.5"/><circle cx="16.5" cy="16.5" r="1.5"/></svg></span><b>Ride</b><small>Walk + taxi or Waymo</small></button>
+        </div>
+        <button class="text-btn" id="moreOptionsBtn" type="button">Pace, budget, accessibility and more</button>
+      </div>
+
+      <p class="form-error" id="formError" role="alert" hidden></p>
+      <div class="wizard-actions">
+        <button class="secondary" id="stepBack" type="button">Back</button>
+        <button class="secondary" id="planBtn" type="button">Plan my day</button>
+        <button class="primary" id="stepNext" type="button">Next</button>
+      </div>
+    </form>
   </section>
+
+  <section class="view loading-view card-view" id="loadingView" aria-labelledby="loadingTitle" hidden>
+    <p class="eyebrow">Planning</p>
+    <h1 id="loadingTitle">Building your day…</h1>
+    <div class="progress" aria-hidden="true"><span></span></div>
+    <p id="loadingSummary" class="loading-summary" role="status" aria-live="polite">Opening the map…</p>
+    <p class="live-count" id="liveCount"></p>
+    <button id="loadingBack" class="text-btn" type="button" disabled>Back to edit</button>
+    <details class="behind-plan"><summary>How this is being planned</summary><div id="loadingTraceSlot"></div></details>
+  </section>
+
+  <dialog class="tune" id="tuneDialog" aria-labelledby="tuneTitle">
+    <form method="dialog" id="tuneForm">
+      <h2 id="tuneTitle">Fine-tune your day</h2>
+      <fieldset>
+        <legend class="lbl">Route style</legend>
+        <div class="seg seg2" id="styleSeg">
+          <button type="button" data-blocks="0">Most stops</button>
+          <button type="button" data-blocks="1">By neighborhood</button>
+        </div>
+      </fieldset>
+      <div class="row2">
+        <div><label for="pace">Pace</label><select id="pace">
+          <option value="relaxed">Relaxed</option><option value="normal" selected>Normal</option><option value="packed">Packed</option>
+        </select></div>
+        <div><label for="budget">Daily budget</label><input type="number" id="budget" min="0" step="1" placeholder="No limit" inputmode="numeric"></div>
+      </div>
+      <p class="hint">Per person for tickets and meals, in local currency.</p>
+      <label for="diet">Dietary preference</label><select id="diet">
+        <option value="">None</option><option value="vegetarian">Vegetarian</option><option value="vegan">Vegan</option>
+      </select>
+      <label class="check"><input type="checkbox" id="wheelchair">Wheelchair accessible places</label>
+      <details class="more">
+        <summary>Plan from your own list or notes</summary>
+        <label for="userList">Plan only from a list you found online</label>
+        <textarea id="userList" rows="4" placeholder="Mount Royal&#10;Notre-Dame Basilica&#10;Jean-Talon Market"></textarea>
+        <p class="hint">One place per line. Must-sees are still included.</p>
+        <label for="msg">Anything else?</label>
+        <textarea id="msg" rows="3" placeholder="Avoid steep hills, dinner booked at 7:30…"></textarea>
+      </details>
+      <div class="tune-actions">
+        <button class="secondary" value="cancel" id="tuneCancel">Cancel</button>
+        <button class="primary" value="apply" id="tuneApply">Done</button>
+      </div>
+    </form>
+  </dialog>
 
   <section class="view results-view" id="resultsView" aria-labelledby="resultsTitle" hidden>
-    <div class="results-map" id="mapPane" role="region" aria-label="Route map">
-      <div id="gmap"></div>
-      <div class="legend map-legend" aria-label="Line styles">
-        <span><i class="lw"></i>Walk</span><span><i class="lt"></i>Transit</span><span><i class="lr"></i>Ride</span>
-      </div>
-    </div>
-
     <div class="sheet" id="sheet" data-snap="half">
       <button class="sheet-grip" id="sheetGrip" type="button" aria-controls="sheetBody" aria-label="Show more of the itinerary"><span aria-hidden="true"></span></button>
       <header class="sheet-head">
@@ -188,7 +186,9 @@
             </div>
           </div>
         </div>
+        <div class="live-bar" id="liveBar"></div>
         <div class="day-tabs" id="dayTabs" role="group" hidden aria-label="Trip days"></div>
+        <div class="tune-chips" id="tuneChips" role="group" aria-label="Fine-tune this day"></div>
       </header>
       <div class="sheet-body" id="sheetBody">
         <div id="dayList">
@@ -216,13 +216,16 @@
 <script src="/assets/js/util.js"></script>
 <script src="/assets/js/views.js"></script>
 <script src="/assets/js/form.js"></script>
+<script src="/assets/js/wizard.js"></script>
 <script src="/assets/js/autocomplete.js"></script>
 <script src="/assets/js/api.js"></script>
 <script src="/assets/js/plan.js"></script>
 <script src="/assets/js/itinerary.js"></script>
 <script src="/assets/js/stop.js"></script>
+<script src="/assets/js/live.js"></script>
 <script src="/assets/js/export.js"></script>
 <script src="/assets/js/map.js"></script>
+<script src="/assets/js/livemap.js"></script>
 <script src="/assets/js/sheet.js"></script>
 <script src="/assets/js/main.js"></script>
 </body>

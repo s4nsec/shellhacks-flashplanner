@@ -1,16 +1,15 @@
 /* ============ form ============ */
 function renderChips(){
   $("#chips").innerHTML=S.tags.map(t=>`<button type="button" class="chip" data-tag="${esc(t)}">${esc(t[0].toUpperCase()+t.slice(1))}</button>`).join("");
-  syncForm();updateTicket();
+  syncForm();
 }
 function syncForm(){
-  $$(".chip").forEach(c=>{const t=c.dataset.tag;c.dataset.state=S.likes.has(t)?"like":S.skips.has(t)?"skip":"";});
+  $$(".chip").forEach(c=>{const t=c.dataset.tag,st=S.likes.has(t)?"like":S.skips.has(t)?"skip":"";c.dataset.state=st;c.setAttribute("aria-pressed",String(st==="like"));});
   $$("#modeSeg button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.mode===S.mode));
   $$("#styleSeg button").forEach(b=>b.setAttribute("aria-pressed",(b.dataset.blocks==="1")===S.blocks));
-  updateTicket();
 }
 $("#chips").addEventListener("click",e=>{const c=e.target.closest(".chip");if(!c)return;const t=c.dataset.tag;
-  if(S.likes.has(t)){S.likes.delete(t);S.skips.add(t);}else if(S.skips.has(t))S.skips.delete(t);else S.likes.add(t);syncForm();});
+  if(S.likes.has(t))S.likes.delete(t);else if(S.skips.has(t))S.skips.delete(t);else S.likes.add(t);syncForm();});  // one tap on, one tap off
 $("#modeSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(b){S.mode=b.dataset.mode;syncForm();}});
 $("#styleSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(b){S.blocks=b.dataset.blocks==="1";syncForm();}});
 // Typed interests become loved chips; one that is already a chip is just loved.

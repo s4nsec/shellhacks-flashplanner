@@ -7,6 +7,7 @@
   await MapView.init(cfg);
 })();
 $("#planBtn").addEventListener("click",planDay);
+Wizard.go(0,{focus:false});
 $("#city").addEventListener("input",()=>{if($("#city").value.trim())formError();});
 $("#demoBtn").addEventListener("click",loadDemo);
 $("#icsBtn").addEventListener("click",downloadCalendar);

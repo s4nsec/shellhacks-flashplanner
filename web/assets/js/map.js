@@ -22,6 +22,7 @@ const MapView={
   async init(cfg){
     if(cfg.mapsKey){
       try{await loadGoogleMaps(cfg.mapsKey);this.kind="google";this.mapId=cfg.mapId;
+        this.ensure({lat:25,lng:-30},2);$("#mapEmpty").hidden=true;  // the whole world until a city is picked
         $("#mapNote").textContent="Map data from Google";return;}catch(e){console.warn(e);}
     }
     this.kind="svg";
@@ -33,8 +34,24 @@ const MapView={
       this.kind="svg";
       $("#gmap").innerHTML=`<svg id="svgmap" role="group" aria-label="Route sketch"></svg>`;
     }
+    $("#mapEmpty").hidden=true;
     if(this.kind==="google")this.drawGoogle(p);
     else this.fit();
+  },
+  ensure(center,zoom=13){
+    this.map??=new google.maps.Map($("#gmap"),{center,zoom,mapId:this.mapId,disableDefaultUI:true,zoomControl:true,zoomControlOptions:{position:google.maps.ControlPosition.RIGHT_CENTER},fullscreenControl:false,gestureHandling:"greedy"});
+    return this.map;
+  },
+  // Show the picked city or start point while the trip is being set up.
+  preview({viewport=null,point=null}){
+    if(this.kind!=="google")return;
+    const map=this.ensure(point||{lat:0,lng:0});
+    if(viewport)this.bounds=viewport;
+    else if(point){this.bounds=new google.maps.LatLngBounds(point,point);
+      this.previewPin&&(this.previewPin.map=null);
+      this.previewPin=new google.maps.marker.AdvancedMarkerElement({map,position:point,content:this.pin("hotel","H"),title:"Start"});}
+    this.fit();
+    if(point&&!viewport)map.setZoom(15);
   },
   // Keep the route in the part of the map the sheet doesn't cover.
   fit(){
@@ -52,7 +69,8 @@ const MapView={
   },
   pin(cls,text){const d=document.createElement("div");d.className="pin "+cls;d.textContent=text||"";return d;},
   drawGoogle(p){
-    if(!this.map)this.map=new google.maps.Map($("#gmap"),{center:{lat:p.hotel.lat,lng:p.hotel.lng},zoom:13,mapId:this.mapId,disableDefaultUI:true,zoomControl:true,zoomControlOptions:{position:google.maps.ControlPosition.RIGHT_CENTER},fullscreenControl:false,gestureHandling:"greedy"});
+    this.ensure({lat:p.hotel.lat,lng:p.hotel.lng});
+    this.previewPin&&(this.previewPin.map=null);
     this.overlays.forEach(o=>{o.setMap?o.setMap(null):(o.map=null);});this.overlays=[];
     const {AdvancedMarkerElement}=google.maps.marker,bounds=new google.maps.LatLngBounds();
     const col={walk:cssVar("--green"),transit:cssVar("--blue"),ride:cssVar("--violet")};

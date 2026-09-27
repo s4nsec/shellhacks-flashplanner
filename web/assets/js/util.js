@@ -15,7 +15,7 @@ const PRESETS=["architecture","food","views","history","art","museums","nature",
 const MODE_TXT={walk:"Walk only",transit:"Walk + transit",ride:"Walk + ride"};
 const USES_POSITION=["rain","late","tired","skip","include"];
 
-const S={likes:new Set(["architecture","food","views"]),skips:new Set(["museums"]),mode:"transit",blocks:true,
+const S={likes:new Set(["architecture","food","views"]),skips:new Set(),mode:"transit",blocks:true,
   tags:[...PRESETS],appointments:[],lastParsed:null,fromNotes:null,startPlace:null,endPlace:null,busy:false,plan:null,sid:null,
-  days:null,activeDay:0,view:"setup",sel:null,detailId:null};
+  days:null,activeDay:0,view:"setup",sel:null,detailId:null,live:false};
 
