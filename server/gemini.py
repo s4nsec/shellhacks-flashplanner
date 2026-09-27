@@ -72,6 +72,7 @@ class PlaceJudgment(BaseModel):
     kind: str               # sight | museum | meal | snack | market | park | viewpoint | shopping | nightlife | other
     setting: str            # indoor | outdoor | covered
     daylight: bool          # only worth visiting, or safe, before dark
+    timing: str             # any | morning | evening | night
     reason: str             # short phrase
     cost: int               # typical spend per person, whole units of local currency
 
@@ -182,6 +183,10 @@ Then for EVERY candidate return:
 - daylight: true for outdoor places that are pointless or unsafe after dark: parks, gardens,
   trails, beaches, nature spots, hilltop lookouts. false for indoor places and for outdoor
   places that work at night: lit plazas and landmarks, night markets, outdoor bars and patios.
+- timing: when in the day a visit makes sense. "morning" for brunch and breakfast spots or
+  places best early; "evening" for bars, clubs, live music and night markets; "night" for places
+  best after dark (night views, light shows); otherwise "any". Most places, including ordinary
+  restaurants, cafés, museums, sights and parks, are "any".
 - reason: under 12 words, why it does or doesn't suit this traveler.
 - cost: what one visitor typically spends there, in whole units of the local currency:
   the entry ticket for sights and museums, a typical meal for meals and snacks, 0 for free

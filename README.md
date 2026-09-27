@@ -122,6 +122,10 @@ Constants at the top of `server/planner.py`:
 - `DUSK_MIN`: how long after sunset a daylight-only stop (parks, trails, nature
   spots, as tagged by Gemini) may end. These stops also wait for sunrise; a
   fixed-time booking there is kept regardless.
+- `MORNING_END`, `EVENING_START`: Gemini tags each place with the time of day it
+  suits. "morning" places (brunch spots) start before `MORNING_END`, "evening"
+  ones (bars, live music) from `EVENING_START`, and "night" ones (night views)
+  start after sunset. Must-see, booked, and locked places ignore this.
 
 `RAIN_MIN_PROB` in `server/weather.py` sets the chance of rain (default 50%)
 from which an hour counts as rainy.
