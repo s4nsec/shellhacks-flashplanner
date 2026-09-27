@@ -1,4 +1,4 @@
-"""Check that GEMINI_API_KEY works. Run from the project root:
+"""Check that GEMINI_API_KEY (or Vertex AI with application default credentials) works. Run from the project root:
 
     python -m server.check_gemini
 """
@@ -11,10 +11,10 @@ try:
 except ImportError:  # run as a file: python3 server/check_gemini.py
     import config
 
-if not config.GEMINI_API_KEY:
-    sys.exit("GEMINI_API_KEY is not set (check your .env).")
+if not config.GEMINI_API_KEY and not config.USE_VERTEX:
+    sys.exit("Set GEMINI_API_KEY, or GOOGLE_GENAI_USE_VERTEXAI=true (check your .env).")
 
-client = genai.Client(api_key=config.GEMINI_API_KEY)
+client = genai.Client(api_key=config.GEMINI_API_KEY or None)
 try:
     resp = client.models.generate_content(
         model=config.GEMINI_MODEL, contents="Reply with the single word: ok"

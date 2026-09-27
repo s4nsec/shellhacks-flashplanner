@@ -303,8 +303,9 @@ async def city_today(city: str, start_location: str = "") -> Date:
 
 @app.post("/api/parse")
 async def parse(req: ParseRequest):
-    if not config.GEMINI_API_KEY:
-        raise HTTPException(400, "Add GEMINI_API_KEY to the .env file, then restart the server.")
+    if not config.GEMINI_API_KEY and not config.USE_VERTEX:
+        raise HTTPException(400, "Add GEMINI_API_KEY (or the Vertex AI settings) to the .env file, "
+                                 "then restart the server.")
     try:
         p = await gemini.parse_trip(req.message, local_date(0).isoformat())
     except Exception as e:  # noqa: BLE001

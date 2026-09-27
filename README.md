@@ -56,6 +56,11 @@ You need Python 3.10 or newer.
 
 2. **Get a Gemini API key** from https://aistudio.google.com/apikey
 
+   Or use Vertex AI with application default credentials instead: enable the
+   Vertex AI API, run `gcloud auth application-default login`, leave
+   `GEMINI_API_KEY` empty and set `GOOGLE_GENAI_USE_VERTEXAI=true`,
+   `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` (e.g. `global`) in `.env`.
+
 3. **Set up Google Maps Platform** at https://console.cloud.google.com
    - Create a project and turn on billing (new accounts get free credit).
    - Enable **Places API (New)**, **Routes API**, **Weather API** and
