@@ -821,6 +821,7 @@ async def replan_stream(req: ReplanRequest, persist: bool = True):
                 cuts = planner.cut_reasons(s, all_nodes, s.route, s.now)
                 if persist:
                     _persist_action(req)
+                await _fetch_polylines(http, s)  # a new last leg may not have a shape yet
                 yield ev(type="plan", **_payload(s, "Back to the start of the day. " + await _story(s, cuts), cuts))
                 return
             node = next((k for k, c in enumerate(s.cands, 1) if c.id == req.place_id), None)
@@ -840,6 +841,7 @@ async def replan_stream(req: ReplanRequest, persist: bool = True):
                          result=story, fresh=True)
                 if persist:
                     _persist_action(req)
+                await _fetch_polylines(http, s)  # a new last leg may not have a shape yet
                 yield ev(type="plan", **_payload(s, story, planner.cut_reasons(s, nodes, s.route, s.now)))
                 return
             if req.event == "done":
@@ -869,6 +871,7 @@ async def replan_stream(req: ReplanRequest, persist: bool = True):
                              result=result, fresh=True)
                     if persist:
                         _persist_action(req)
+                    await _fetch_polylines(http, s)  # a new last leg may not have a shape yet
                     yield ev(type="plan", **_payload(s, story, planner.cut_reasons(s, nodes, s.route, s.now)))
                     return
 
@@ -983,11 +986,12 @@ def _blocks(s, stops):
 
 async def _fetch_polylines(http, s):
     res = planner.simulate(s, s.route, s.now, s.loc)
-    if not res:
-        return
     # Each leg with the local minute it leaves at, so transit shapes match the timetable.
-    legs = [(st["from"], st["node"], st["leg"]["mode"], st["arrive"] - st["leg"]["min"]) for st in res["stops"]]
-    legs.append((res["back"]["from"], s.end_node, res["back"]["mode"], res["end"] - res["back"]["min"]))
+    if res:
+        legs = [(st["from"], st["node"], st["leg"]["mode"], st["arrive"] - st["leg"]["min"]) for st in res["stops"]]
+        legs.append((res["back"]["from"], s.end_node, res["back"]["mode"], res["end"] - res["back"]["min"]))
+    else:  # out of time: _payload sends you straight to the end point
+        legs = [(s.loc, s.end_node, planner.leg(s, s.loc, s.end_node)["mode"], s.now)]
     todo = {}
     for a, b, m, t in legs:
         if (a, b, m) not in s.polylines and a != b:

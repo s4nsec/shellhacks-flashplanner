@@ -98,7 +98,7 @@ async def leg_shape(http: httpx.AsyncClient, a: tuple[float, float], b: tuple[fl
     transit tries the next departure Google knows, then the walking path."""
     tries = [(mode, departure_iso)]
     if mode == "TRANSIT":
-        tries += [("TRANSIT", None), ("WALK", None)]
+        tries += [("TRANSIT", None)] * bool(departure_iso) + [("WALK", None)]
     for m, dep in tries:
         try:
             shape = await polyline(http, a, b, m, dep)

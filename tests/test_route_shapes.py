@@ -1,4 +1,5 @@
 import asyncio
+import json
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest import mock
@@ -67,3 +68,29 @@ class RouteShapeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReplanShapeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_finishing_a_stop_draws_a_new_last_leg(self):
+        from server.models import ReplanRequest
+        s = _session()
+        s.id = "shapes-done"
+        s.polylines[(0, 1, "transit")] = "there"
+        main.remember_session(s)
+        # The back leg from a was never fetched; after "done" it's the only leg left.
+        shape = mock.AsyncMock(return_value="home")
+        with mock.patch.object(main.routes, "polyline", shape), \
+                mock.patch.object(main.gemini, "narrate_change", mock.AsyncMock(return_value="ok"), create=True):
+            events = [json.loads(x) async for x in main.replan_stream(ReplanRequest(session_id=s.id, event="done"))]
+
+        self.assertEqual(events[-1]["type"], "plan")
+        self.assertEqual(events[-1]["back"]["polyline"], "home")
+
+    def test_out_of_time_leg_home_gets_a_shape(self):
+        s = _session()
+        s.now = 890  # too late for a, so the plan goes straight back
+        shape = mock.AsyncMock(return_value="home")
+        s.loc = 1
+        with mock.patch.object(main.routes, "polyline", shape):
+            asyncio.run(main._fetch_polylines(None, s))
+        self.assertEqual(s.polylines[(1, 0, "transit")], "home")
