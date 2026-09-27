@@ -12,4 +12,5 @@ $("#city").addEventListener("input",()=>{if($("#city").value.trim())formError();
 $("#demoBtn").addEventListener("click",loadDemo);
 $("#icsBtn").addEventListener("click",downloadCalendar);
 $("#copyBtn").addEventListener("click",copyPlan);
+$("#imageBtn").addEventListener("click",saveImage);
 $("#cuts").addEventListener("click",e=>{const b=e.target.closest(".putback");if(b)replan("include",30,null,b.dataset.id);});
