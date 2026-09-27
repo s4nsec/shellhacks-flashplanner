@@ -41,6 +41,12 @@ LIVE_RADIUS_KM = 50   # a device farther than this from the start point isn't in
 WHATS_ON: dict[tuple[str, str], dict] = {}  # (place id, date) -> that day's listings
 
 
+@app.middleware("http")
+async def keep_vercel_oidc_token(request, call_next):
+    gemini.vercel_oidc_token.set(request.headers.get("x-vercel-oidc-token", ""))
+    return await call_next(request)
+
+
 # ---------- small helpers ----------
 
 def to_min(hhmm: str | None, default: int) -> int:

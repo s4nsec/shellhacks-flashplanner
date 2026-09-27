@@ -61,6 +61,16 @@ You need Python 3.10 or newer.
    `GEMINI_API_KEY` empty and set `GOOGLE_GENAI_USE_VERTEXAI=true`,
    `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` (e.g. `global`) in `.env`.
 
+   On Vercel there are no application default credentials, so use Workload
+   Identity Federation: turn on OIDC Federation (Team issuer) in the Vercel
+   project's Security settings, create a workload identity pool with an OIDC
+   provider for issuer `https://oidc.vercel.com/<team-slug>` and audience
+   `https://vercel.com/<team-slug>`, and let a service account with the Vertex
+   AI User role be impersonated from that pool. Then set the Vertex variables
+   above plus `GCP_PROJECT_NUMBER`, `GCP_WORKLOAD_IDENTITY_POOL_ID`,
+   `GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID` and `GCP_SERVICE_ACCOUNT_EMAIL`
+   in the Vercel project's environment variables.
+
 3. **Set up Google Maps Platform** at https://console.cloud.google.com
    - Create a project and turn on billing (new accounts get free credit).
    - Enable **Places API (New)**, **Routes API**, **Weather API** and
