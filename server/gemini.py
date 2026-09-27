@@ -71,6 +71,7 @@ class PlaceJudgment(BaseModel):
     score: int              # 0-100 for this traveler
     kind: str               # sight | museum | meal | snack | market | park | viewpoint | shopping | nightlife | other
     setting: str            # indoor | outdoor | covered
+    daylight: bool          # only worth visiting, or safe, before dark
     reason: str             # short phrase
     cost: int               # typical spend per person, whole units of local currency
 
@@ -178,6 +179,9 @@ Then for EVERY candidate return:
 - kind: one of sight, museum, meal, snack, market, park, viewpoint, shopping, nightlife, other.
   Use "meal" only for sit-down restaurants or delis where you'd eat lunch or dinner.
 - setting: indoor, outdoor, or covered (partly sheltered, like a covered market).
+- daylight: true for outdoor places that are pointless or unsafe after dark: parks, gardens,
+  trails, beaches, nature spots, hilltop lookouts. false for indoor places and for outdoor
+  places that work at night: lit plazas and landmarks, night markets, outdoor bars and patios.
 - reason: under 12 words, why it does or doesn't suit this traveler.
 - cost: what one visitor typically spends there, in whole units of the local currency:
   the entry ticket for sights and museums, a typical meal for meals and snacks, 0 for free
