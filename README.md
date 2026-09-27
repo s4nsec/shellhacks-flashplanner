@@ -24,7 +24,7 @@ Built for ShellHacks: best overall, the Waymo Mobility Challenge and Best Use of
 | Find candidate places, hours, ratings | Places API (New) Text Search | `server/places.py: search_text()` |
 | Score each place for this traveler, estimate tickets and meal prices | Gemini | `server/gemini.py: score_places()` |
 | Read up to 5 reviews per place for visit length | Places API + Gemini | `get_reviews()`, `estimate_visits()` |
-| Opening hours, neighborhoods, sunset | local | `places.py: opening_windows()`, `planner.py` |
+| Opening hours, neighborhoods, sunrise and sunset | local | `places.py: opening_windows()`, `planner.py` |
 | Hourly rain forecast for the day | Weather API hourly forecast | `server/weather.py: hourly()` |
 | Travel time between every pair of places | Routes API Compute Route Matrix | `server/routes.py: matrix()` |
 | Choose stops and order | OR-Tools vehicle routing | `server/planner.py: solve()` |
@@ -119,11 +119,13 @@ Constants at the top of `server/planner.py`:
   break. Only days long enough get one, and `auto_breaks: false` turns it off.
 - `PACE`: how pace scales visit lengths.
 - `RAIN_FACTOR`: how much a visit in forecast rain is worth, by setting.
+- `DUSK_MIN`: how long after sunset a daylight-only stop (parks, trails, nature
+  spots, as tagged by Gemini) may end. These stops also wait for sunrise; a
+  fixed-time booking there is kept regardless.
 - `MORNING_END`, `EVENING_START`: Gemini tags each place with the time of day it
   suits. "morning" places (brunch spots) start before `MORNING_END`, "evening"
-  ones (bars, live music) from `EVENING_START`, "daytime" ones (parks, trails)
-  finish by sunset, and "night" ones (night views) start after it. Must-see,
-  booked, and locked places ignore this.
+  ones (bars, live music) from `EVENING_START`, and "night" ones (night views)
+  start after sunset. Must-see, booked, and locked places ignore this.
 
 `RAIN_MIN_PROB` in `server/weather.py` sets the chance of rain (default 50%)
 from which an hour counts as rainy.

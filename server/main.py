@@ -554,6 +554,7 @@ async def plan_stream(req: TripRequest, persist: bool = True,
                     list_rank=rank.get(p["id"], 999), hood=places.neighborhood(p),
                     score=score, kind=kind,
                     setting=j.setting if j and j.setting in planner.RAIN_FACTOR else "indoor",
+                    daylight=bool(j and j.daylight),
                     timing=j.timing if j and j.timing in planner.TIMINGS else "any",
                     reason=mismatch or (j.reason if j else ""), must=must,
                     appointment_time=appointment_times.get(p["id"]),
@@ -638,6 +639,7 @@ async def plan_stream(req: TripRequest, persist: bool = True,
                     if c.zone_name in avoid_zones and not (c.must or c.appointment_time is not None):
                         c.score = max(0, c.score - 20)
             sunset = planner.sunset_minutes(hotel["lat"], hotel["lng"], day, utc_offset)
+            sunrise = planner.sunrise_minutes(hotel["lat"], hotel["lng"], day, utc_offset)
             zones = sorted({c.zone_name for c in shortlist})
             yield step_ok("hours", t0,
                           f"{closed} closed on {day.strftime('%A')}. {len(zones)} neighborhoods. "
@@ -707,7 +709,7 @@ async def plan_stream(req: TripRequest, persist: bool = True,
                 utc_offset=utc_offset, sunset=sunset, hotel=hotel,
                 end_location=end_location, end_node=end_node, cands=shortlist,
                 walk=walk, walk_m=walk_m, transit=transit, drive=drive,
-                start=start_min, deadline=deadline, drive_m=drive_m, now=start_min, loc=0,
+                start=start_min, deadline=deadline, drive_m=drive_m, sunrise=sunrise, now=start_min, loc=0,
                 forecast=forecast, rain_hours=rain_hours, currency=scored.currency)
             for c in shortlist:
                 del c._raw
@@ -822,6 +824,7 @@ async def replan_stream(req: ReplanRequest, persist: bool = True):
                 cuts = planner.cut_reasons(s, all_nodes, s.route, s.now)
                 if persist:
                     _persist_action(req)
+                await _fetch_polylines(http, s)  # a new last leg may not have a shape yet
                 yield ev(type="plan", **_payload(s, "Back to the start of the day. " + await _story(s, cuts), cuts))
                 return
             node = next((k for k, c in enumerate(s.cands, 1) if c.id == req.place_id), None)
@@ -841,6 +844,7 @@ async def replan_stream(req: ReplanRequest, persist: bool = True):
                          result=story, fresh=True)
                 if persist:
                     _persist_action(req)
+                await _fetch_polylines(http, s)  # a new last leg may not have a shape yet
                 yield ev(type="plan", **_payload(s, story, planner.cut_reasons(s, nodes, s.route, s.now)))
                 return
             if req.event == "done":
@@ -870,6 +874,7 @@ async def replan_stream(req: ReplanRequest, persist: bool = True):
                              result=result, fresh=True)
                     if persist:
                         _persist_action(req)
+                    await _fetch_polylines(http, s)  # a new last leg may not have a shape yet
                     yield ev(type="plan", **_payload(s, story, planner.cut_reasons(s, nodes, s.route, s.now)))
                     return
 
@@ -984,16 +989,35 @@ def _blocks(s, stops):
 
 async def _fetch_polylines(http, s):
     res = planner.simulate(s, s.route, s.now, s.loc)
-    if not res:
-        return
-    legs = [(st["from"], st["node"], st["leg"]["mode"]) for st in res["stops"]]
-    legs.append((res["back"]["from"], s.end_node, res["back"]["mode"]))
-    todo = [k for k in legs if k not in s.polylines and k[0] != k[1]]
-    got = await asyncio.gather(*(routes.polyline(http, s.point(a), s.point(b), MODE_API[m]) for a, b, m in todo),
+    # Each leg with the local minute it leaves at, so transit shapes match the timetable.
+    if res:
+        legs = [(st["from"], st["node"], st["leg"]["mode"], st["arrive"] - st["leg"]["min"]) for st in res["stops"]]
+        legs.append((res["back"]["from"], s.end_node, res["back"]["mode"], res["end"] - res["back"]["min"]))
+    else:  # out of time: _payload sends you straight to the end point
+        legs = [(s.loc, s.end_node, planner.leg(s, s.loc, s.end_node)["mode"], s.now)]
+    todo = {}
+    for a, b, m, t in legs:
+        if (a, b, m) not in s.polylines and a != b:
+            todo.setdefault((a, b, m), t)
+    got = await asyncio.gather(*(routes.leg_shape(http, s.point(a), s.point(b), MODE_API[m], _leg_departure(s, t))
+                                 for (a, b, m), t in todo.items()),
                                return_exceptions=True)
     for k, g in zip(todo, got):
         if isinstance(g, str):
             s.polylines[k] = g
+        else:
+            log.warning("No route shape for leg %s (%s); the map draws a straight line", k, g)
+
+
+def _leg_departure(s, minute: int) -> str:
+    """UTC departure for a leg leaving at `minute` on the plan's day, moved into the range
+    Google has transit timetables for."""
+    local = datetime.combine(Date.fromisoformat(s.date), datetime.min.time()) + timedelta(minutes=minute)
+    dep = local - timedelta(minutes=s.utc_offset)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if dep < now + timedelta(minutes=2):
+        dep = now + timedelta(minutes=5)
+    return routes.transit_departure(dep, now).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 async def _story(s, cuts):

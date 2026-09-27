@@ -13,6 +13,10 @@ body{overflow:hidden}
 /* ---- guided setup ---- */
 .setup-top{display:flex;align-items:center;justify-content:space-between;gap:1rem}
 .brand{display:inline-flex;align-items:center;gap:.5rem;min-height:44px}
+.resume-plan{white-space:nowrap}
+.resume-plan::after{content:"›";margin-left:.3rem;text-decoration:none}
+/* on the narrowest phones the logo alone carries the brand so the way back fits on one line */
+@media (max-width:359px){.setup-top:has(.resume-plan:not([hidden])) .brand span{display:none}}
 .step-count{margin:0;color:var(--muted);font-size:.85rem;font-variant-numeric:tabular-nums}
 .step-bar{height:3px;margin:.5rem 0 0;border-radius:2px;background:var(--line);overflow:hidden}
 .step-bar span{display:block;height:100%;width:0;background:var(--blue);transition:width .25s ease}

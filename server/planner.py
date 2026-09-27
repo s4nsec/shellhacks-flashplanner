@@ -7,10 +7,10 @@ Opening hours are time windows, visit lengths are service times, each sit-down
 meal lands near the time the traveler asked for (lunch and dinner by default), a
 café becomes a coffee break once the traveler has been going for a while,
 viewpoints lean toward golden hour, places keep to the time of day they suit (brunch
-spots in the morning, parks before sunset, bars in the evening, night views after
-dark), and switching neighborhoods costs points so
-the day forms blocks. Hours with rain in the
-forecast make outdoor stops worth less, so they get pushed to dry hours. When the
+spots in the morning, bars in the evening, night views after dark), and switching
+neighborhoods costs points so the day forms blocks. Hours with rain in the
+forecast make outdoor stops worth less, so they get pushed to dry hours. Parks,
+trails and other daylight-only places fit between sunrise and dusk. When the
 traveler sets a budget, the estimated tickets and meals must fit inside it.
 """
 import math
@@ -44,10 +44,10 @@ KIND_DEFAULT_MIN = {"museum": 90, "meal": 60, "snack": 20, "market": 50, "park":
                     "viewpoint": 30, "shopping": 45, "nightlife": 90, "sight": 45, "other": 40}
 RAIN_FACTOR = {"outdoor": 0.25, "covered": 0.75, "indoor": 1.15}
 STRETCH_KINDS = {"park", "viewpoint", "sight", "shopping"}  # visits that may run long to fill a wait
-TIMINGS = ("any", "morning", "daytime", "evening", "night")  # when in the day a place makes sense
+DUSK_MIN = 30                # daylight-only visits may end this long after sunset (civil twilight)
+TIMINGS = ("any", "morning", "evening", "night")  # when in the day a place makes sense
 MORNING_END, EVENING_START = 720, 1020  # "morning" visits start before noon, "evening" ones from 17:00
 TIMING_WHY = {"morning": "Best in the morning, outside your time window",
-              "daytime": "Needs daylight, and the sun sets before it would fit",
               "evening": "Best in the evening, outside your time window",
               "night": "Best after dark, outside your time window"}
 
@@ -67,6 +67,7 @@ class Cand:
     score: int = 0                # Gemini, 0-100
     kind: str = "sight"
     setting: str = "indoor"
+    daylight: bool = False        # only worth visiting (or safe) before dark: parks, trails, nature
     timing: str = "any"           # one of TIMINGS
     reason: str = ""
     visit_min: int = 45
@@ -104,6 +105,7 @@ class Session:
     start: int
     deadline: int
     drive_m: list | None = None
+    sunrise: int | None = None
     now: int = 0
     loc: int = 0
     completed: list = field(default_factory=list)
@@ -167,6 +169,15 @@ def haversine_km(a, b) -> float:
 
 def sunset_minutes(lat: float, lng: float, day: Date, utc_offset_min: int) -> int | None:
     """Local sunset in minutes after midnight (NOAA approximation, about 1-2 min accurate)."""
+    return sun_minutes(lat, lng, day, utc_offset_min, rising=False)
+
+
+def sunrise_minutes(lat: float, lng: float, day: Date, utc_offset_min: int) -> int | None:
+    """Local sunrise in minutes after midnight, like sunset_minutes()."""
+    return sun_minutes(lat, lng, day, utc_offset_min, rising=True)
+
+
+def sun_minutes(lat: float, lng: float, day: Date, utc_offset_min: int, rising: bool) -> int | None:
     g = 2 * math.pi / 365 * (day.timetuple().tm_yday - 1)
     eqtime = 229.18 * (0.000075 + 0.001868 * math.cos(g) - 0.032077 * math.sin(g)
                        - 0.014615 * math.cos(2 * g) - 0.040849 * math.sin(2 * g))
@@ -177,7 +188,7 @@ def sunset_minutes(lat: float, lng: float, day: Date, utc_offset_min: int) -> in
     if abs(x) > 1:
         return None  # polar day or night
     ha = math.degrees(math.acos(x))
-    utc = 720 - 4 * (lng - ha) - eqtime
+    utc = 720 - 4 * (lng + ha if rising else lng - ha) - eqtime
     return int(round(utc + utc_offset_min)) % 1440
 
 
@@ -242,6 +253,15 @@ def complement(iv: list, lo: int = 0, hi: int = 1439) -> list:
 
 # ---------- per-node quantities ----------
 
+def daylight(s: Session, node: int) -> tuple[int, int] | None:
+    """(sunrise, dusk) for a daylight-only place, or None when it has no daylight limit, the
+    traveler booked a fixed time there, or the sun doesn't rise and set that day."""
+    c = s.cand(node)
+    if not c.daylight or c.appointment_time is not None or s.sunrise is None or s.sunset is None:
+        return None
+    return (s.sunrise, s.sunset + DUSK_MIN)
+
+
 def points(s: Session, node: int, weather: str = "dry") -> float:
     c = s.cand(node)
     p = c.score / 4
@@ -263,12 +283,13 @@ def stretch(s: Session, st: dict, wait: int) -> int:
     if c.kind not in STRETCH_KINDS or c.appointment_time is not None or c.break_stop:
         return 0
     close = next((cl for o, cl in c.windows if o <= st["begin"] < cl), st["leave"])
+    day = daylight(s, st["node"])
+    if day:
+        close = min(close, day[1])
     extra = min(wait, 2 * visit_len(s, st["node"]) - (st["leave"] - st["begin"]), close - st["leave"])
     if RAIN_FACTOR.get(c.setting, 1) < 1:
         rain = [h * 60 for h in s.rain_hours if h >= st["leave"] // 60]
         extra = min(extra, min(rain, default=st["leave"] + extra) - st["leave"])
-    if c.timing == "daytime" and s.sunset is not None:
-        extra = min(extra, s.sunset - st["leave"])
     return max(0, extra)
 
 
@@ -361,12 +382,9 @@ def mark_break_stops(cands: list, trip: dict, start: int, deadline: int) -> list
 
 def timing_starts(s: Session, c: Cand, v: int) -> list:
     """When a visit of v minutes may start so it happens at the time of day the place suits:
-    morning places before noon, daytime ones finished by sunset, evening ones from 17:00 and
-    night ones after sunset."""
+    morning places before noon, evening ones from 17:00 and night ones after sunset."""
     if c.timing == "morning":
         return [(0, MORNING_END - 1)]
-    if c.timing == "daytime" and s.sunset is not None:
-        return [(0, s.sunset - v)]
     if c.timing == "evening":
         return [(EVENING_START, 1439)]
     if c.timing == "night":
@@ -375,12 +393,16 @@ def timing_starts(s: Session, c: Cand, v: int) -> list:
 
 
 def allowed_starts(s: Session, node: int, t0: int, slots: list | None = None,
-                   weather: str | None = None) -> list:
+                   weather: str | None = None, dark: bool = False) -> list:
     """Time intervals when a visit to this node may start. Meals must start in one of the slots
     (default: every requested meal). weather "dry" or "wet" keeps visits that count as out of
-    or in the forecast rain. Places the traveler insisted on skip the time-of-day rule."""
+    or in the forecast rain. Daylight-only places must be visited between sunrise and dusk,
+    unless dark is set. Places the traveler insisted on skip the time-of-day rule."""
     c, v = s.cand(node), visit_len(s, node)
     iv = [(o, cl - v) for o, cl in c.windows if cl - v >= o]
+    day = None if dark else daylight(s, node)
+    if day:
+        iv = intersect(iv, [(day[0], day[1] - v)])
     if not (c.must or c.appointment_time is not None or node in s.locked):
         iv = intersect(iv, timing_starts(s, c, v))
     # An explicit reservation overrides the generic meal suggestions.
@@ -503,8 +525,6 @@ def timeline(s: Session, route: list, t0: int, start_node: int, extra: dict, dep
         if begin is None:
             return None
         leave = begin + visit_len(s, node) + extra.get(len(stops), 0)
-        if c.timing == "daytime" and s.sunset is not None:   # lingering ends at sunset
-            leave = max(begin + visit_len(s, node), min(leave, s.sunset))
         notes = []
         if c.appointment_time is not None:
             notes.append("appointment")
@@ -729,6 +749,8 @@ def cut_reasons(s: Session, cand_nodes: list, route: list, t0: int) -> list:
             why = "You asked for no sit-down meals"
         elif c.break_stop and any(s.cand(x).break_stop for x in in_plan):
             why = "Another café covers the coffee break"
+        elif not allowed_starts(s, k, t0) and allowed_starts(s, k, t0, dark=True):
+            why = "Outdoors, and it would be dark by the time it fits"
         elif not allowed_starts(s, k, t0):
             v = visit_len(s, k)
             why = "Its hours don't fit your time window"
