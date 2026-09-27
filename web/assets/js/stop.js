@@ -86,4 +86,4 @@ $("#stopDetail").addEventListener("click",e=>{
   else if(e.target.closest("#detailNext"))openStop(S.sel+1);
   else{const b=e.target.closest(".lock");if(b)replan(b.dataset.locked==="1"?"unlock":"lock",30,null,b.dataset.id);}
 });
-document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("#stopDetail").hidden&&$("#shareMenu").hidden&&!$("#resultsView").hidden)closeStop();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("#stopDetail").hidden&&$("#shareMenu").hidden&&!$("#tuneDialog").open&&!$("#resultsView").hidden)closeStop();});
