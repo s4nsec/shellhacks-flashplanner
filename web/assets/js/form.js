@@ -23,13 +23,24 @@ $("#moreInterests").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key==="
 $("#moreInterests").addEventListener("change",addInterests);
 renderChips();
 
+const addDays=(iso,n)=>{const d=new Date(iso+"T00:00Z");d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10);};
+// The day count comes from the From–To range, up to a week; a blank To is a one-day trip.
+function tripDays(){
+  const from=$("#date").value,to=$("#dateTo").value;
+  if(!from||!to)return 1;
+  return Math.max(1,Math.min(7,Math.round((Date.parse(to)-Date.parse(from))/864e5)+1));
+}
 function syncDayWindows(values=[]){
-  const n=Math.max(1,Math.min(7,Number($("#days").value)||1));$("#days").value=n;
+  const from=$("#date").value,n=tripDays();
+  $("#dateTo").min=from;$("#dateTo").max=from?addDays(from,6):"";
+  if(from&&$("#dateTo").value)$("#dateTo").value=addDays(from,n-1);
+  if(n>1)showDateRange();  // a range from the notes needs the date fields visible
   const old=$$("#dayWindows .day-window").map(r=>({start_time:r.querySelector(".day-start").value,end_time:r.querySelector(".day-end").value}));
   if(n===1){$("#dayWindows").innerHTML="";return;}
   $("#dayWindows").innerHTML=Array.from({length:n},(_,i)=>{const w=values[i]||old[i]||{start_time:$("#tStart").value||"10:00",end_time:$("#tEnd").value||"19:00"};return `<div class="day-window"><b>Day ${i+1}</b><label>Start<input class="day-start" type="time" value="${esc(w.start_time)}"></label><label>Finish<input class="day-end" type="time" value="${esc(w.end_time)}"></label></div>`;}).join("");
 }
-$("#days").addEventListener("change",()=>syncDayWindows());
+$("#date").addEventListener("change",()=>syncDayWindows());
+$("#dateTo").addEventListener("change",()=>syncDayWindows());
 
 const norm=s=>s.toLowerCase().trim().replace(/s$/,"");
 // Notes only fill what the settings leave open: blank fields, new interests, must-sees and bookings.
@@ -43,7 +54,7 @@ function undoNotes(){
   drop("#mustSee",a.must);
   if(a.wheelchair)$("#wheelchair").checked=false;
   if(a.diet)$("#diet").value="";
-  if(a.days){$("#days").value=1;syncDayWindows();}
+  if(a.days){$("#dateTo").value="";syncDayWindows();}
   renderChips();
 }
 function applyNotes(p){
@@ -73,8 +84,9 @@ function applyNotes(p){
     (p.dietary_preferences||[]).includes("vegetarian")?"vegetarian":"";
   a.diet=diet&&!$("#diet").value;
   if(a.diet){$("#diet").value=diet;used.dietary_preferences=[diet];}
-  a.days=(p.days||1)>1&&Number($("#days").value)===1;
-  if(a.days){$("#days").value=p.days;syncDayWindows(p.day_windows||[]);
+  a.days=(p.days||1)>1&&tripDays()===1;
+  if(a.days){if(!$("#date").value)$("#date").value=new Date().toLocaleDateString("en-CA");
+    $("#dateTo").value=addDays($("#date").value,p.days-1);syncDayWindows(p.day_windows||[]);
     used.days=p.days;if((p.day_windows||[]).length)used.day_windows=p.day_windows;}
   // Meals and the coffee break come only from the notes; Gemini defaults them to lunch, dinner and a break.
   if(Array.isArray(p.meals)){S.meals=p.meals;
@@ -84,7 +96,7 @@ function applyNotes(p){
   return used;
 }
 function readForm(){
-  const days=Math.max(1,Math.min(7,Number($("#days").value)||1));
+  const days=tripDays();
   return {city:$("#city").value.trim(),date:$("#date").value||null,
     start_time:$("#tStart").value||"10:00",end_time:$("#tEnd").value||"19:00",
     start_location:$("#startLoc").value.trim()||null,start_place:S.startPlace,

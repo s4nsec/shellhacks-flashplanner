@@ -26,12 +26,19 @@ $("#city").addEventListener("keydown",e=>{if(e.key==="Enter"&&$("#cityList").hid
 
 /* ---- when: Today leaves the date blank so the server uses the city's own today ---- */
 function localDate(offset){const d=new Date();d.setDate(d.getDate()+offset);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
-function setDay(kind){
+function markDay(kind){
   $$("#dayQuick button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.day===kind)));
   $("#dateWrap").hidden=kind!=="pick";
+}
+function showDateRange(){markDay("pick");}
+// Today and Tomorrow are one-day trips; Pick a date opens From and To for a range of up to a week.
+function setDay(kind){
+  markDay(kind);
   if(kind==="today")$("#date").value="";
   else if(kind==="tomorrow")$("#date").value=localDate(1);
+  if(kind!=="pick")$("#dateTo").value="";
   else{if(!$("#date").value)$("#date").value=localDate(0);$("#date").focus();}
+  syncDayWindows();
 }
 $("#dayQuick").addEventListener("click",e=>{const b=e.target.closest("button[data-day]");if(b)setDay(b.dataset.day);});
 

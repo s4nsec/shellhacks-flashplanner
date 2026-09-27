@@ -89,7 +89,6 @@ body{overflow:hidden}
 .wstep-title+.fsec{border-top:0;padding-top:0}
 .fsec h3{margin:0 0 .5rem;font-size:.72rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
 .fsec label{margin:.6rem 0 .25rem;font-size:.78rem;font-weight:600;color:var(--muted)}
-.row3{display:grid;grid-template-columns:1fr 1fr 4.25rem;gap:.5rem}
 textarea,select,input[type=time],input[type=date],input[type=text],input[type=number]{min-height:44px;border-width:1px;padding:.5rem .65rem}
 .big-input{min-height:52px}
 .add-input{margin-top:.5rem;border-style:dashed!important;background:transparent!important}

@@ -1,11 +1,18 @@
 # FlashPlanner
 
-An AI agent that plans a day in a city you've never visited. Tell it how long
-you have, what you like, and where you need to finish. It finds the places worth
-seeing, reads reviews to decide how long to stay at each, gets real travel times,
-and uses OR-Tools to pick the best set of stops and the order to visit them. When
-the day changes ("it's pouring", "I'm running late"), it re-plans from where you
-are.
+## Summary
+
+FlashPlanner creates realistic, personalized city itineraries. Give it a city,
+your available time, interests, must-see places, budget, pace, and preferred way
+to get around; it returns an ordered route that fits the day instead of a loose
+list of recommendations.
+
+The planner searches Google Places, reads reviews to estimate how long each stop
+deserves, checks opening hours and weather, and uses real travel times with
+OR-Tools to choose a route. The result includes a timed itinerary, an interactive
+map, reasons for each recommendation, estimated costs, omitted-place explanations,
+and calendar, text, and Google Maps exports. Trips can cover one to seven days,
+with a custom time window for each day and a chosen start and finish location.
 
 Built for ShellHacks: the Waymo Mobility Challenge and Best Use of Gemini API.
 
@@ -22,8 +29,8 @@ Built for ShellHacks: the Waymo Mobility Challenge and Best Use of Gemini API.
 | Travel time between every pair of places | Routes API Compute Route Matrix | `server/routes.py: matrix()` |
 | Choose stops and order | OR-Tools vehicle routing | `server/planner.py: solve()` |
 | Street and transit shapes for the map | Routes API Compute Routes | `server/routes.py: polyline()` |
-| Explain the plan and the changes | Gemini | `narrate_plan()`, `narrate_change()` |
-| Turn "it's pouring" into an action | Gemini function calling | `interpret_event()` |
+| Explain the finished plan | Gemini | `narrate_plan()` |
+| Turn "it's pouring" into a re-plan during the day | Gemini function calling | `interpret_event()` |
 | Map | Maps JavaScript API | `web/assets/js/map.js` |
 
 Trips can span up to seven consecutive days. FlashPlanner avoids repeating places,
@@ -87,16 +94,13 @@ You need Python 3.10 or newer.
   one `step` event per stage, then a `plan` event (or an `error` event). Set
   `days` from 1 to 7 and optionally provide `day_windows` entries with
   `start_time` and `end_time` for per-day schedules.
-- `POST /api/interpret` `{session_id, text}`: Gemini function call, returns
-  `{reason, delay_minutes}`.
-- `POST /api/replan` `{session_id, event, delay_minutes, client_time, lat, lng}`
-  where event is `done`, `rain`, `late`, `tired`, `skip` or `reset`: streams
-  like `/api/plan`. `client_time` (ISO 8601) and `lat`/`lng` are optional; see
-  "Live day" below.
+- `POST /api/replan`: updates a route when the user locks or unlocks a stop, or
+  restores a place from the omitted list. Like `/api/plan`, it streams planning
+  steps followed by the updated plan.
 
 Plans are cached in memory and backed by SQLite recipes. After a restart, the
-server rebuilds a requested plan with fresh API calls and replays its live-day
-actions. Set `SESSION_DB_PATH` to move the database (default: `sessions.sqlite3`).
+server rebuilds a requested plan with fresh API calls and reapplies its saved
+route edits. Set `SESSION_DB_PATH` to move the database (default: `sessions.sqlite3`).
 
 ## Tuning
 
@@ -144,16 +148,7 @@ Transit matrices allow 100 pairs per request; `routes.matrix()` batches them.
   visit time, Gemini estimates from what it knows, and the itinerary says so.
 - **Weather.** The Weather API forecast starts at the current hour and covers
   10 days, so hours already past and days further out are planned as dry. Outdoor stops are steered to dry
-  hours, and the "It's raining" event marks the rest of the day as rainy.
-- **Live day.** When the plan is for today in the city, re-plans use the
-  device's clock instead of assuming you kept to the schedule, and the browser
-  sends its location (if you allow it) so the rest of the day is planned from
-  where you are, using a one-row route matrix. "Finish next stop" puts you at
-  that stop at the real time and only re-plans if the rest no longer fits.
-  "Running late" adds its delay on top of the real clock. If you're more than
-  10 minutes past a stop's planned leave time, the Live day panel offers to
-  re-plan from now. Locations more than 50 km from the start are ignored.
-  Plans for other days keep the simulated clock.
+  hours whenever the forecast is available.
 - **Transit** isn't available everywhere. Where there's no transit route, legs
   fall back to walking.
 - **"Walk + ride"** uses driving times and distances with traffic plus 4 minutes

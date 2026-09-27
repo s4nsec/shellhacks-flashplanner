@@ -63,11 +63,13 @@
             <button type="button" data-day="tomorrow" aria-pressed="false">Tomorrow</button>
             <button type="button" data-day="pick" aria-pressed="false">Pick a date</button>
           </div>
-          <div id="dateWrap" hidden><label for="date">Date</label><input type="date" id="date"></div>
-          <div class="row3">
+          <div class="row2" id="dateWrap" hidden>
+            <div><label for="date">From</label><input type="date" id="date"></div>
+            <div><label for="dateTo">To <span class="hint">optional</span></label><input type="date" id="dateTo"></div>
+          </div>
+          <div class="row2">
             <div><label for="tStart">Start</label><input type="time" id="tStart" value="10:00"></div>
             <div><label for="tEnd">Finish by</label><input type="time" id="tEnd" value="19:00"></div>
-            <div><label for="days">Days</label><input type="number" id="days" min="1" max="7" value="1" inputmode="numeric"></div>
           </div>
           <div class="day-windows" id="dayWindows"></div>
         </section>
