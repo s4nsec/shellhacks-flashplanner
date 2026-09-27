@@ -36,6 +36,14 @@
 .stop-detail .rv ul{margin:.3rem 0 .2rem;padding:0 0 0 .8rem;border-left:2px solid var(--line);list-style:none}
 .stop-detail .rv li{font-family:var(--serif);font-size:.88rem;color:var(--ink);padding:.2rem 0}
 .stop-detail .rv li cite{display:block;font-family:var(--sans);font-style:normal;font-size:.75rem;color:var(--muted)}
+.whats-on{margin:1rem 0 0}
+.whats-on h3{margin:0;font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.whats-on ul{margin:.4rem 0 0;padding:0;list-style:none}
+.whats-on li{display:flex;flex-direction:column;gap:.15rem;padding:.5rem 0;border-bottom:1px solid var(--line)}
+.whats-on li span{font-size:.8rem;color:var(--muted)}
+.whats-on .times{display:flex;flex-wrap:wrap;gap:.3rem}
+.whats-on time{font-variant-numeric:tabular-nums;font-size:.75rem;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:.05rem .4rem}
+.whats-on time.fit{background:var(--goldsoft);border-color:var(--gold);font-weight:700}
 .detail-actions{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:1.25rem}
 .detail-actions .primary,.detail-actions .secondary{display:flex;align-items:center;justify-content:center;min-height:48px;padding:.6rem;font-size:.9rem;text-align:center;text-decoration:none}
 .detail-actions .lock{grid-column:1 / -1}

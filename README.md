@@ -31,6 +31,7 @@ Built for ShellHacks: best overall, the Waymo Mobility Challenge and Best Use of
 | Street and transit shapes for the map | Routes API Compute Routes | `server/routes.py: polyline()` |
 | Explain the finished plan | Gemini | `narrate_plan()` |
 | Turn "it's pouring" into a re-plan during the day | Gemini function calling | `interpret_event()` |
+| What's on at cinemas, theaters and concert halls on the day | Gemini + Google Search grounding | `whats_on()` |
 | Map | Maps JavaScript API | `web/assets/js/map.js` |
 
 Trips can span up to seven consecutive days. FlashPlanner avoids repeating places,
@@ -97,6 +98,8 @@ You need Python 3.10 or newer.
 - `POST /api/replan`: updates a route when the user locks or unlocks a stop, or
   restores a place from the omitted list. Like `/api/plan`, it streams planning
   steps followed by the updated plan.
+- `GET /api/whats-on?session_id=&place_id=`: films, shows or concerts at a venue stop
+  on the plan's date, with start times (minutes after midnight) and the search sources.
 
 Plans are cached in memory and backed by SQLite recipes. After a restart, the
 server rebuilds a requested plan with fresh API calls and reapplies its saved
