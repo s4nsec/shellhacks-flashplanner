@@ -6,13 +6,13 @@ function stopTags(st){
   if(!st.done&&st.locked&&!st.fixed)t.push({text:st.must?"Must-see":"Kept",cls:""});
   Object.entries(slot).forEach(([k,text])=>{if(st.notes.includes(k))t.push({text,cls:"gold"});});
   if(st.notes.includes("rain"))t.push({text:st.setting==="outdoor"?"Outdoors":st.setting==="covered"?"Covered":"Indoors",cls:"rain"});
-  if(st.venue&&!st.done)t.push({text:"What's on",cls:""});
+  if(st.venue&&!st.done&&S.sid)t.push({text:"What's on",cls:"link",go:"whatsOn"});
   return t;
 }
 // The planner's kind for each place, as a category people recognize. "other" has none.
 const CATEGORY={sight:"Sight",museum:"Museum",meal:"Food",snack:"Café & snacks",market:"Market",park:"Park",
   viewpoint:"Viewpoint",shopping:"Shopping",nightlife:"Nightlife"};
-const tagHtml=ts=>ts.map(x=>`<span class="tag ${x.cls}">${esc(x.text)}</span>`).join("");
+const tagHtml=ts=>ts.map(x=>x.go?`<button type="button" class="tag ${x.cls}" data-go="${x.go}">${esc(x.text)}</button>`:`<span class="tag ${x.cls}">${esc(x.text)}</span>`).join("");
 // One line for the list: what it is, how long, how good, how pricey.
 function stopGlance(st){
   const bits=[`${hm(st.visit.minutes)}`];
@@ -109,11 +109,18 @@ function closeStop(){
   $("#stopDetail").hidden=true;$("#dayList").hidden=false;
   if(was!=null&&S.sel!=null){const b=$(`#itin .stop-open[data-i="${S.sel}"]`);if(b){b.scrollIntoView({block:"nearest"});b.focus({preventScroll:true});}}
 }
-$("#itin").addEventListener("click",e=>{const b=e.target.closest(".stop-open");if(b)openStop(Number(b.dataset.i));});
+// A tag that points at a section of the detail opens the stop and scrolls there.
+const showSection=id=>{const el=document.getElementById(id);if(el)el.scrollIntoView({behavior:"smooth",block:"start"});};
+$("#itin").addEventListener("click",e=>{
+  const g=e.target.closest(".tag[data-go]");
+  if(g){openStop(Number(g.closest(".stn").dataset.i));showSection(g.dataset.go);return;}
+  const b=e.target.closest(".stop-open");if(b)openStop(Number(b.dataset.i));
+});
 $("#stopDetail").addEventListener("click",e=>{
   if(e.target.closest("#detailBack"))closeStop();
   else if(e.target.closest("#detailPrev"))openStop(S.sel-1);
   else if(e.target.closest("#detailNext"))openStop(S.sel+1);
+  else if(e.target.closest(".tag[data-go]"))showSection(e.target.closest(".tag[data-go]").dataset.go);
   else{const b=e.target.closest(".lock");if(b)replan(b.dataset.locked==="1"?"unlock":"lock",30,null,b.dataset.id);}
 });
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("#stopDetail").hidden&&$("#shareMenu").hidden&&!$("#tuneDialog").open&&!$("#resultsView").hidden)closeStop();});
