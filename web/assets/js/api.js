@@ -47,6 +47,7 @@ function setBusy(b){
   S.busy=b;$("#planBtn").disabled=b;$("#demoBtn").disabled=b;
   $("#planBtn").textContent=b?"Planning…":"Plan my day";
   $("#loadingBack").disabled=b;
+  $("#resumePlan").hidden=!(S.view==="setup"&&S.plan&&!b);
 }
 function formError(message=""){
   const box=$("#formError");box.textContent=message;box.hidden=!message;
