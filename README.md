@@ -30,7 +30,8 @@ Built for ShellHacks: the Waymo Mobility Challenge and Best Use of Gemini API.
 | Choose stops and order | OR-Tools vehicle routing | `server/planner.py: solve()` |
 | Street and transit shapes for the map | Routes API Compute Routes | `server/routes.py: polyline()` |
 | Explain the finished plan | Gemini | `narrate_plan()` |
-| Map | Maps JavaScript API | `web/index.html` |
+| Turn "it's pouring" into a re-plan during the day | Gemini function calling | `interpret_event()` |
+| Map | Maps JavaScript API | `web/assets/js/map.js` |
 
 Trips can span up to seven consecutive days. FlashPlanner avoids repeating places,
 steers later days toward neighborhoods not yet visited, and accepts a separate

@@ -18,6 +18,7 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from . import config, gemini, places, planner, rides, routes, session_store, weather
 from .models import InterpretRequest, ParseRequest, ReplanRequest, TripRequest
@@ -27,6 +28,7 @@ log = logging.getLogger("flashplanner")
 
 app = FastAPI(title="FlashPlanner")
 WEB = Path(__file__).resolve().parent.parent / "web"
+app.mount("/assets", StaticFiles(directory=WEB / "assets"), name="assets")
 SESSIONS: dict[str, planner.Session] = {}   # in memory, one per planned day
 SESSION_TOUCHED: dict[str, float] = {}
 SESSION_TTL_SECONDS = 6 * 60 * 60
@@ -409,6 +411,8 @@ async def multi_day_plan_stream(req: TripRequest):
                 event["key"] = f"day-{index + 1}-{event['key']}"
                 event["title"] = f"Day {index + 1}: {event['title']}"
                 yield ev(**event)
+            elif event.get("type") == "places":
+                yield ev(**event, day=index + 1)
             elif event.get("type") == "error":
                 yield line
                 return
@@ -513,6 +517,9 @@ async def plan_stream(req: TripRequest, persist: bool = True,
             if missing_names:
                 res_txt += f". Couldn't find: {', '.join(missing_names)}"
             yield step_ok("find", t0, res_txt + ".")
+            yield ev(type="places", stage="found", places=[
+                {"id": p["id"], "name": places.display_name(p), "lat": p["location"]["latitude"],
+                 "lng": p["location"]["longitude"]} for p in raw if p.get("location")])
 
             # --- Gemini scores every candidate for this traveler
             yield step_run("score", "Score each place for you",
@@ -570,6 +577,8 @@ async def plan_stream(req: TripRequest, persist: bool = True,
                 f"  {'*' if c.id in short_ids else ' '} {c.score:3d} {c.kind:<9} {c.name} | must={c.must} | {c.reason}"
                 for c in cands))
             yield step_ok("score", t0, f"Kept the best {len(shortlist)} for you. Top matches: {top}.")
+            yield ev(type="places", stage="shortlist",
+                     places=[{"id": c.id, "name": c.name, "lat": c.lat, "lng": c.lng} for c in shortlist])
 
             # --- reviews -> visit lengths
             yield step_run("reviews", "Read reviews for visit lengths",
