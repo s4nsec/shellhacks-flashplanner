@@ -2,7 +2,7 @@
 
 ## Summary
 
-FlashPlanner builds realistic, personalized city itineraries. Give it a city,
+FlashPlanner creates realistic, personalized city itineraries. Give it a city,
 your available time, interests, must-see places, budget, pace, and preferred way
 to get around; it returns an ordered route that fits the day instead of a loose
 list of recommendations.
