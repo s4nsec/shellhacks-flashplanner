@@ -9,10 +9,14 @@ function stopTags(st){
   if(st.venue&&!st.done)t.push({text:"What's on",cls:""});
   return t;
 }
+// The planner's kind for each place, as a category people recognize. "other" has none.
+const CATEGORY={sight:"Sight",museum:"Museum",meal:"Food",snack:"Café & snacks",market:"Market",park:"Park",
+  viewpoint:"Viewpoint",shopping:"Shopping",nightlife:"Nightlife"};
 const tagHtml=ts=>ts.map(x=>`<span class="tag ${x.cls}">${esc(x.text)}</span>`).join("");
-// One line for the list: how long, how good, how pricey.
+// One line for the list: what it is, how long, how good, how pricey.
 function stopGlance(st){
   const bits=[`${hm(st.visit.minutes)}`];
+  if(CATEGORY[st.kind])bits.unshift(CATEGORY[st.kind]);
   if(st.wait>0)bits.push(`${st.wait} min wait`);
   if(st.rating)bits.push(`★ ${st.rating.toFixed(1)}`);
   if(st.price)bits.push(priceText(st.price));
@@ -74,7 +78,7 @@ function renderStopDetail(i){
     </div>
     <p class="eyebrow">Stop ${i+1} · ${fmt(st.begin)} to ${fmt(st.leave)}</p>
     <h2 id="stopName" tabindex="-1">${esc(st.name)}</h2>
-    <p class="detail-kind">${esc(st.kind)}${st.zone?` · ${esc(st.zone)}`:""}</p>
+    <p class="detail-kind">${[CATEGORY[st.kind],st.zone].filter(Boolean).map(esc).join(" · ")}</p>
     <div class="tags">${tagHtml(stopTags(st))}</div>
     ${st.reason?`<p class="why">${esc(st.reason)}</p>`:""}
     <dl class="facts">${facts.map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>

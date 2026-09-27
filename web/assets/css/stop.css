@@ -20,7 +20,8 @@
 .detail-step{display:flex;gap:.5rem}
 .detail-step .icon-btn{font-size:1.3rem;line-height:1}
 .detail-step .icon-btn:disabled{opacity:.4;cursor:default}
-.detail-kind{margin:.25rem 0 0;color:var(--muted);font-size:.85rem;text-transform:capitalize}
+.detail-kind{margin:.25rem 0 0;color:var(--muted);font-size:.85rem}
+.detail-kind:empty{display:none}
 .stop-detail .tags{display:flex;flex-wrap:wrap;gap:.35rem;margin:.6rem 0 0}
 .stop-detail .tags:empty{display:none}
 .stop-detail .tag{font-size:.75rem;border-radius:5px;padding:.1rem .45rem;background:var(--land);border:1px solid var(--line)}
