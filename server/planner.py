@@ -84,6 +84,7 @@ class Cand:
     break_stop: bool = False             # a café the solver may use for the coffee break
     cost: int = 0                 # estimated spend per person, local currency
     price: dict | None = None     # Google's price range or level, for display
+    venue: bool = False           # cinema, theater, concert hall...: has listings for the day
 
 
 @dataclass

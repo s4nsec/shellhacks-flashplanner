@@ -25,6 +25,13 @@ SKIP_TYPES = {
     "bank", "car_rental", "travel_agency", "tour_agency", "real_estate_agency",
 }
 
+# Venues whose worth depends on what's on that day: films, shows, concerts, games.
+VENUE_TYPES = {
+    "movie_theater", "performing_arts_theater", "concert_hall", "opera_house",
+    "philharmonic_hall", "amphitheatre", "comedy_club", "live_music_venue",
+    "event_venue", "auditorium", "arena", "stadium",
+}
+
 
 def _headers(field_mask: str) -> dict:
     return {"X-Goog-Api-Key": config.MAPS_KEY, "X-Goog-FieldMask": field_mask}
@@ -88,6 +95,11 @@ def neighborhood(place: dict) -> str:
 def is_visitable(place: dict) -> bool:
     types_ = set(place.get("types", [])) | {place.get("primaryType", "")}
     return not (types_ & SKIP_TYPES)
+
+
+def is_venue(place: dict) -> bool:
+    types_ = set(place.get("types", [])) | {place.get("primaryType", "")}
+    return bool(types_ & VENUE_TYPES)
 
 
 def opening_windows(place: dict, weekday: int) -> tuple[list[tuple[int, int]], bool]:

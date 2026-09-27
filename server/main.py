@@ -38,6 +38,7 @@ SHORTLIST = 20        # places that get reviews, travel times and a place in the
 MAX_CANDIDATES = 40   # places Gemini scores
 MODE_API = {"walk": "WALK", "transit": "TRANSIT", "ride": "DRIVE"}
 LIVE_RADIUS_KM = 50   # a device farther than this from the start point isn't in the city yet
+WHATS_ON: dict[tuple[str, str], dict] = {}  # (place id, date) -> that day's listings
 
 
 # ---------- small helpers ----------
@@ -560,7 +561,8 @@ async def plan_stream(req: TripRequest, persist: bool = True,
                     appointment_time=appointment_times.get(p["id"]),
                     accessibility=p.get("accessibilityOptions", {}),
                     serves_vegetarian_food=p.get("servesVegetarianFood"),
-                    cost=max(0, j.cost) if j else 0, price=places.price(p))
+                    cost=max(0, j.cost) if j else 0, price=places.price(p),
+                    venue=places.is_venue(p))
                 c.visit_min = planner.KIND_DEFAULT_MIN[c.kind]
                 c._raw = p
                 if c.score > 0 or must or c.appointment_time is not None or using_list:
@@ -769,6 +771,28 @@ async def interpret(req: InterpretRequest):
         return await gemini.interpret_event(req.text, ctx)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Gemini couldn't interpret that: {e}")
+
+
+@app.get("/api/whats-on")
+async def whats_on(session_id: str, place_id: str):
+    """Films, shows or concerts at a venue stop on the plan's day. Times are minutes after midnight."""
+    s = await get_session(session_id)
+    if not s:
+        raise HTTPException(404, "That plan has expired. Plan the day again.")
+    c = next((c for c in s.cands if c.id == place_id), None)
+    if not c or not c.venue:
+        raise HTTPException(404, "That stop has no listings to check.")
+    key = (place_id, s.date)
+    if key not in WHATS_ON:
+        day = f"{Date.fromisoformat(s.date):%A} {s.date}"
+        try:
+            found = await gemini.whats_on(c.name, c.address, day)
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(502, f"Couldn't check what's on: {e}")
+        for sh in found["showings"]:
+            sh["times"] = sorted({m for m in (to_min(t, -1) for t in sh["times"]) if m >= 0})
+        WHATS_ON[key] = found
+    return WHATS_ON[key]
 
 
 def live_minutes(s: planner.Session, client_time: datetime | None) -> int | None:
@@ -1090,7 +1114,7 @@ def _stop_json(s, st, done):
             "hours_known": c.hours_known,
             "locked": c.must or c.appointment_time is not None or st["node"] in s.locked, "must": c.must,
             "fixed": c.appointment_time is not None, "cost": c.cost, "price": c.price,
-            "opens": c.windows[0][0] if c.windows else None}
+            "opens": c.windows[0][0] if c.windows else None, "venue": c.venue}
 
 
 def _ride_comparison(s, legs):

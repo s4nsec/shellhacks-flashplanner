@@ -8,6 +8,8 @@ function renderAll(){
   $("#icsBtn").disabled=false;
   $("#copyBtn").disabled=!S.plan;
   renderHeading();Tune.chips();renderLive();
+  // Listings take a web search, so start it now rather than when the stop opens.
+  if(S.sid)stops.filter(st=>st.venue&&!st.done).forEach(st=>whatsOn(st).catch(()=>{}));
   showView("results",false);
   // A re-plan from a stop's detail (Keep in plan) comes back to that stop.
   const again=S.detailId!=null?planStops(S.plan).findIndex(st=>st.id===S.detailId):-1;

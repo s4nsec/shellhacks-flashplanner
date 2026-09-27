@@ -6,6 +6,7 @@ function stopTags(st){
   if(!st.done&&st.locked&&!st.fixed)t.push({text:st.must?"Must-see":"Kept",cls:""});
   Object.entries(slot).forEach(([k,text])=>{if(st.notes.includes(k))t.push({text,cls:"gold"});});
   if(st.notes.includes("rain"))t.push({text:st.setting==="outdoor"?"Outdoors":st.setting==="covered"?"Covered":"Indoors",cls:"rain"});
+  if(st.venue&&!st.done)t.push({text:"What's on",cls:""});
   return t;
 }
 const tagHtml=ts=>ts.map(x=>`<span class="tag ${x.cls}">${esc(x.text)}</span>`).join("");
@@ -34,6 +35,29 @@ function lockButton(st){
   const why=st.fixed?"Fixed time from your request":st.must?"Must-see from your request":"";
   return `<button type="button" class="secondary lock${st.locked?" on":""}" data-id="${esc(st.id)}" data-locked="${st.locked?1:0}" aria-pressed="${Boolean(st.locked)}"${why?` disabled title="${why}"`:""}>${st.locked?"Kept in plan":"Keep in plan"}</button>`;
 }
+// Cinemas, theaters, concert halls: that day's listings, fetched when the stop opens.
+const WHATS_ON=new Map();  // "date|place id" -> promise of {showings, sources}
+function whatsOn(st){
+  const key=`${S.plan.date}|${st.id}`;
+  if(!WHATS_ON.has(key))WHATS_ON.set(key,fetch(`/api/whats-on?${new URLSearchParams({session_id:S.sid,place_id:st.id})}`)
+    .then(async r=>{if(!r.ok)throw new Error(await errorText(r));return r.json();})
+    .catch(err=>{WHATS_ON.delete(key);throw err;}));
+  return WHATS_ON.get(key);
+}
+function whatsOnHtml(st,w){
+  const fits=t=>t>=st.begin&&t<st.leave,any=w.showings.some(x=>x.times.some(fits));
+  const src=w.sources.length?`<p class="rv">Found with Google Search: ${w.sources.slice(0,3).map(x=>`<a href="${esc(x.uri)}" target="_blank" rel="noopener">${esc(x.title||"source")}</a>`).join(", ")}</p>`:"";
+  if(!w.showings.length)return `<p class="rv">No listings found for this day.</p>${src}`;
+  return `<ul>${w.showings.map(x=>`<li><b>${x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a>`:esc(x.title)}</b>`+
+    `${x.detail?`<span>${esc(x.detail)}</span>`:""}`+
+    `${x.times.length?`<span class="times">${x.times.map(t=>`<time class="${fits(t)?"fit":""}">${fmt(t)}</time>`).join("")}</span>`:""}</li>`).join("")}</ul>`+
+    `${any?`<p class="rv">Highlighted times start during your visit, ${fmt(st.begin)} to ${fmt(st.leave)}.</p>`:""}${src}`;
+}
+async function loadWhatsOn(st){
+  const box=$("#whatsOn .wo-body");if(!box)return;
+  try{const w=await whatsOn(st);if(box.isConnected)box.innerHTML=whatsOnHtml(st,w);}
+  catch(err){if(box.isConnected)box.innerHTML=`<p class="rv">${esc(err.message)}</p>`;}
+}
 function renderStopDetail(i){
   const all=planStops(S.plan),st=all[i],prev=i?all[i-1]:(S.plan.here||S.plan.hotel);
   const facts=[["Time here",hm(st.visit.minutes)+(st.visit.extra>0?` (${st.visit.extra} min extra instead of waiting later)`:"")],
@@ -55,11 +79,13 @@ function renderStopDetail(i){
     ${st.reason?`<p class="why">${esc(st.reason)}</p>`:""}
     <dl class="facts">${facts.map(([k,v])=>`<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
     ${st.done?"":visitNote(st)}
+    ${st.venue&&!st.done&&S.sid?`<section class="whats-on" id="whatsOn"><h3>What's on</h3><div class="wo-body"><p class="rv">Checking listings for this day…</p></div></section>`:""}
     <div class="detail-actions">
       <a class="primary" href="https://www.google.com/maps/dir/?${dir}" target="_blank" rel="noopener">Directions</a>
       <a class="secondary" href="${esc(place)}" target="_blank" rel="noopener">Open in Google Maps</a>
       ${lockButton(st)}
     </div>`;
+  loadWhatsOn(st);
 }
 // Selecting a stop highlights its row and pin; opening it swaps the list for its detail.
 function selectStop(i){

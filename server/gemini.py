@@ -90,6 +90,17 @@ class VisitEstimate(BaseModel):
     review_numbers: list[int]  # 1-based index of the review each quote came from
 
 
+class Showing(BaseModel):
+    title: str              # film, show, artist or match
+    detail: str             # performer, genre, age rating...; "" if none
+    times: list[str]        # local start times, HH:MM (24h)
+    url: str                # listing or ticket page, or ""
+
+
+class WhatsOn(BaseModel):
+    showings: list[Showing]
+
+
 async def _structured(prompt: str, schema):
     resp = await client().aio.models.generate_content(
         model=config.GEMINI_MODEL,
@@ -241,6 +252,39 @@ these facts:
 
 {json.dumps(facts, ensure_ascii=False)}"""
     return await _text(prompt)
+
+
+async def whats_on(name: str, address: str, day: str) -> dict:
+    """Films, shows or concerts at a venue on one day, from Google Search grounding.
+    Returns {showings: [Showing as dict], sources: [{title, uri}]}.
+
+    Two calls: the API drops grounding metadata in JSON mode, so the search answers
+    in text first and a second call structures only what it found."""
+    resp = await client().aio.models.generate_content(
+        model=config.GEMINI_MODEL,
+        contents=f"""Search the web for what's on at this venue on {day}:
+{name}, {address}
+
+List each film, show, concert, performance or game happening there that day, with
+who's performing (or the genre or age rating), every start time, and the listing or
+ticket page if there is one. Only include things you found for that exact date.""",
+        config=types.GenerateContentConfig(
+            tools=[types.Tool(google_search=types.GoogleSearch())], temperature=0.2),
+    )
+    meta = resp.candidates[0].grounding_metadata if resp.candidates else None
+    chunks = [ch.web for ch in (meta.grounding_chunks if meta else None) or [] if ch.web and ch.web.uri]
+    if not chunks:  # the model answered without searching; don't show made-up listings
+        return {"showings": [], "sources": []}
+    found = await _structured(f"""Turn these listings for {name} on {day} into JSON. For each one:
+- title: the film, show, headliner or match.
+- detail: who's performing, the genre or the age rating, under 10 words; "" if not given.
+- times: every start time that day, local 24-hour HH:MM.
+- url: its listing or ticket page if the text gives one, else "".
+Use only what the text says. If it found nothing for that date, return an empty list.
+
+{resp.text or ""}""", WhatsOn)
+    return {"showings": [x.model_dump() for x in found.showings],
+            "sources": [{"title": w.title or "", "uri": w.uri} for w in chunks]}
 
 
 REPLAN = types.FunctionDeclaration(
