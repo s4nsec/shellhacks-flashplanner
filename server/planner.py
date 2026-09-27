@@ -6,7 +6,9 @@ skipping one costs its score, so the solver fits the most valuable set of stops.
 Opening hours are time windows, visit lengths are service times, each sit-down
 meal lands near the time the traveler asked for (lunch and dinner by default), a
 café becomes a coffee break once the traveler has been going for a while,
-viewpoints lean toward golden hour, and switching neighborhoods costs points so
+viewpoints lean toward golden hour, places keep to the time of day they suit (brunch
+spots in the morning, parks before sunset, bars in the evening, night views after
+dark), and switching neighborhoods costs points so
 the day forms blocks. Hours with rain in the
 forecast make outdoor stops worth less, so they get pushed to dry hours. When the
 traveler sets a budget, the estimated tickets and meals must fit inside it.
@@ -42,6 +44,12 @@ KIND_DEFAULT_MIN = {"museum": 90, "meal": 60, "snack": 20, "market": 50, "park":
                     "viewpoint": 30, "shopping": 45, "nightlife": 90, "sight": 45, "other": 40}
 RAIN_FACTOR = {"outdoor": 0.25, "covered": 0.75, "indoor": 1.15}
 STRETCH_KINDS = {"park", "viewpoint", "sight", "shopping"}  # visits that may run long to fill a wait
+TIMINGS = ("any", "morning", "daytime", "evening", "night")  # when in the day a place makes sense
+MORNING_END, EVENING_START = 720, 1020  # "morning" visits start before noon, "evening" ones from 17:00
+TIMING_WHY = {"morning": "Best in the morning, outside your time window",
+              "daytime": "Needs daylight, and the sun sets before it would fit",
+              "evening": "Best in the evening, outside your time window",
+              "night": "Best after dark, outside your time window"}
 
 
 @dataclass
@@ -59,6 +67,7 @@ class Cand:
     score: int = 0                # Gemini, 0-100
     kind: str = "sight"
     setting: str = "indoor"
+    timing: str = "any"           # one of TIMINGS
     reason: str = ""
     visit_min: int = 45
     visit_source: str = "estimate"
@@ -258,6 +267,8 @@ def stretch(s: Session, st: dict, wait: int) -> int:
     if RAIN_FACTOR.get(c.setting, 1) < 1:
         rain = [h * 60 for h in s.rain_hours if h >= st["leave"] // 60]
         extra = min(extra, min(rain, default=st["leave"] + extra) - st["leave"])
+    if c.timing == "daytime" and s.sunset is not None:
+        extra = min(extra, s.sunset - st["leave"])
     return max(0, extra)
 
 
@@ -348,13 +359,30 @@ def mark_break_stops(cands: list, trip: dict, start: int, deadline: int) -> list
     return picks
 
 
+def timing_starts(s: Session, c: Cand, v: int) -> list:
+    """When a visit of v minutes may start so it happens at the time of day the place suits:
+    morning places before noon, daytime ones finished by sunset, evening ones from 17:00 and
+    night ones after sunset."""
+    if c.timing == "morning":
+        return [(0, MORNING_END - 1)]
+    if c.timing == "daytime" and s.sunset is not None:
+        return [(0, s.sunset - v)]
+    if c.timing == "evening":
+        return [(EVENING_START, 1439)]
+    if c.timing == "night":
+        return [(EVENING_START if s.sunset is None else s.sunset, 1439)]
+    return [(0, 1439)]
+
+
 def allowed_starts(s: Session, node: int, t0: int, slots: list | None = None,
                    weather: str | None = None) -> list:
     """Time intervals when a visit to this node may start. Meals must start in one of the slots
     (default: every requested meal). weather "dry" or "wet" keeps visits that count as out of
-    or in the forecast rain."""
+    or in the forecast rain. Places the traveler insisted on skip the time-of-day rule."""
     c, v = s.cand(node), visit_len(s, node)
     iv = [(o, cl - v) for o, cl in c.windows if cl - v >= o]
+    if not (c.must or c.appointment_time is not None or node in s.locked):
+        iv = intersect(iv, timing_starts(s, c, v))
     # An explicit reservation overrides the generic meal suggestions.
     if c.kind == "meal" and c.appointment_time is None:
         iv = intersect(iv, list(meal_windows(s.trip).values()) if slots is None else list(slots))
@@ -475,6 +503,8 @@ def timeline(s: Session, route: list, t0: int, start_node: int, extra: dict, dep
         if begin is None:
             return None
         leave = begin + visit_len(s, node) + extra.get(len(stops), 0)
+        if c.timing == "daytime" and s.sunset is not None:   # lingering ends at sunset
+            leave = max(begin + visit_len(s, node), min(leave, s.sunset))
         notes = []
         if c.appointment_time is not None:
             notes.append("appointment")
@@ -700,7 +730,11 @@ def cut_reasons(s: Session, cand_nodes: list, route: list, t0: int) -> list:
         elif c.break_stop and any(s.cand(x).break_stop for x in in_plan):
             why = "Another café covers the coffee break"
         elif not allowed_starts(s, k, t0):
+            v = visit_len(s, k)
             why = "Its hours don't fit your time window"
+            if not (c.must or c.appointment_time is not None or k in s.locked) and not intersect(
+                    timing_starts(s, c, v), [(t0, s.deadline - v)]):
+                why = TIMING_WHY.get(c.timing, why)
         elif left is not None and c.cost > left - spend:
             why = "Would go over your budget"
         elif walk_left is not None and walking + min(

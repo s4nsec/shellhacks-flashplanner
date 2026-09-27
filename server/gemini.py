@@ -71,6 +71,7 @@ class PlaceJudgment(BaseModel):
     score: int              # 0-100 for this traveler
     kind: str               # sight | museum | meal | snack | market | park | viewpoint | shopping | nightlife | other
     setting: str            # indoor | outdoor | covered
+    timing: str             # any | morning | daytime | evening | night
     reason: str             # short phrase
     cost: int               # typical spend per person, whole units of local currency
 
@@ -178,6 +179,11 @@ Then for EVERY candidate return:
 - kind: one of sight, museum, meal, snack, market, park, viewpoint, shopping, nightlife, other.
   Use "meal" only for sit-down restaurants or delis where you'd eat lunch or dinner.
 - setting: indoor, outdoor, or covered (partly sheltered, like a covered market).
+- timing: when in the day a visit makes sense. "morning" for brunch and breakfast spots or
+  places best early; "daytime" for places that need daylight (parks, gardens, trails, beaches,
+  outdoor markets); "evening" for bars, clubs, live music and night markets; "night" for places
+  best after dark (night views, light shows); otherwise "any". Most places, including ordinary
+  restaurants, cafés, museums and sights, are "any".
 - reason: under 12 words, why it does or doesn't suit this traveler.
 - cost: what one visitor typically spends there, in whole units of the local currency:
   the entry ticket for sights and museums, a typical meal for meals and snacks, 0 for free

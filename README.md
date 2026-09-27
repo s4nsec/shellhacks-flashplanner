@@ -119,6 +119,11 @@ Constants at the top of `server/planner.py`:
   break. Only days long enough get one, and `auto_breaks: false` turns it off.
 - `PACE`: how pace scales visit lengths.
 - `RAIN_FACTOR`: how much a visit in forecast rain is worth, by setting.
+- `MORNING_END`, `EVENING_START`: Gemini tags each place with the time of day it
+  suits. "morning" places (brunch spots) start before `MORNING_END`, "evening"
+  ones (bars, live music) from `EVENING_START`, "daytime" ones (parks, trails)
+  finish by sunset, and "night" ones (night views) start after it. Must-see,
+  booked, and locked places ignore this.
 
 `RAIN_MIN_PROB` in `server/weather.py` sets the chance of rain (default 50%)
 from which an hour counts as rainy.
