@@ -14,7 +14,7 @@ map, reasons for each recommendation, estimated costs, omitted-place explanation
 and calendar, text, and Google Maps exports. Trips can cover one to seven days,
 with a custom time window for each day and a chosen start and finish location.
 
-Built for ShellHacks: the Waymo Mobility Challenge and Best Use of Gemini API.
+Built for ShellHacks: best overall, the Waymo Mobility Challenge and Best Use of Gemini API.
 
 ## What each part does
 
