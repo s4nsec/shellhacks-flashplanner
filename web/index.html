@@ -38,11 +38,9 @@
         </svg>
         <span>FlashPlanner</span>
       </a>
-      <p class="step-count" id="stepCount" aria-live="polite"></p>
     </div>
     <h1 class="sr-only">Plan a day in a new city</h1>
-    <div class="step-bar" aria-hidden="true"><span id="stepBar"></span></div>
-
+    
     <form class="trip-form" id="tripForm" novalidate>
       <div class="wstep" data-step="0">
         <h2 id="setupTitle" class="wstep-title" tabindex="-1">Where are you spending the day?</h2>
@@ -56,63 +54,67 @@
       </div>
 
       <div class="wstep" data-step="1" hidden>
-        <h2 class="wstep-title" tabindex="-1">When are you going?</h2>
-        <div class="quick" id="dayQuick" role="group" aria-label="Day">
-          <button type="button" data-day="today" aria-pressed="true">Today</button>
-          <button type="button" data-day="tomorrow" aria-pressed="false">Tomorrow</button>
-          <button type="button" data-day="pick" aria-pressed="false">Pick a date</button>
-        </div>
-        <div id="dateWrap" hidden><label for="date">Date</label><input type="date" id="date"></div>
-        <div class="row2">
-          <div><label for="tStart">Start</label><input type="time" id="tStart" value="10:00"></div>
-          <div><label for="tEnd">Finish by</label><input type="time" id="tEnd" value="19:00"></div>
-        </div>
-        <label for="days">Days</label><input type="number" id="days" min="1" max="7" value="1" inputmode="numeric">
-        <div class="day-windows" id="dayWindows"></div>
-      </div>
+        <h2 class="wstep-title" tabindex="-1" id="dayTitle">Your day</h2>
 
-      <div class="wstep" data-step="2" hidden>
-        <h2 class="wstep-title" tabindex="-1">Where do you start?</h2>
-        <div class="ac"><label for="startLoc">Hotel or address</label><input type="text" id="startLoc" placeholder="Leave blank to start downtown"
+        <section class="fsec" aria-labelledby="h-when">
+          <h3 id="h-when">When</h3>
+          <div class="quick" id="dayQuick" role="group" aria-label="Day">
+            <button type="button" data-day="today" aria-pressed="true">Today</button>
+            <button type="button" data-day="tomorrow" aria-pressed="false">Tomorrow</button>
+            <button type="button" data-day="pick" aria-pressed="false">Pick a date</button>
+          </div>
+          <div id="dateWrap" hidden><label for="date">Date</label><input type="date" id="date"></div>
+          <div class="row3">
+            <div><label for="tStart">Start</label><input type="time" id="tStart" value="10:00"></div>
+            <div><label for="tEnd">Finish by</label><input type="time" id="tEnd" value="19:00"></div>
+            <div><label for="days">Days</label><input type="number" id="days" min="1" max="7" value="1" inputmode="numeric"></div>
+          </div>
+          <div class="day-windows" id="dayWindows"></div>
+        </section>
+
+        <section class="fsec" aria-labelledby="h-start">
+          <h3 id="h-start">Start from</h3>
+        <div class="ac"><label for="startLoc" class="sr-only">Hotel or address</label><input type="text" id="startLoc" placeholder="Leave blank to start downtown"
           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="startLocList" aria-describedby="startLocPicked" autocomplete="off">
           <ul id="startLocList" class="ac-list" role="listbox" aria-label="Suggested places" hidden></ul>
           <p id="startLocPicked" class="picked"></p><p id="startLocLive" class="sr-only" aria-live="polite"></p></div>
-        <button class="secondary locate-btn" id="useLocation" type="button">Use my location</button>
+        <div class="inline-links">
+        <button class="text-btn" id="useLocation" type="button">Use my location</button>
         <button class="text-btn" id="endToggle" type="button" aria-expanded="false" aria-controls="endWrap">Finish somewhere else</button>
+        </div>
         <div id="endWrap" hidden>
           <div class="ac"><label for="endLoc">Finish at</label><input type="text" id="endLoc" placeholder="Airport, station, restaurant…"
             role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="endLocList" aria-describedby="endLocPicked" autocomplete="off">
             <ul id="endLocList" class="ac-list" role="listbox" aria-label="Suggested finishing places" hidden></ul>
             <p id="endLocPicked" class="picked"></p><p id="endLocLive" class="sr-only" aria-live="polite"></p></div>
         </div>
-      </div>
 
-      <div class="wstep" data-step="3" hidden>
-        <h2 class="wstep-title" tabindex="-1">What are you into?</h2>
-        <fieldset>
-          <legend class="sr-only">Interests</legend>
-          <div class="chips" id="chips"></div>
-        </fieldset>
-        <label for="moreInterests">Something else?</label>
-        <input type="text" id="moreInterests" placeholder="Jazz bars, bagels, brutalism…">
-        <label for="mustSee">Places you don’t want to miss</label>
-        <input type="text" id="mustSee" placeholder="Comma-separated place names">
-      </div>
+        </section>
 
-      <div class="wstep" data-step="4" hidden>
-        <h2 class="wstep-title" tabindex="-1">How will you get around?</h2>
+        <section class="fsec" aria-labelledby="h-into">
+          <h3 id="h-into">You’re into</h3>
+          <div class="chips" id="chips" role="group" aria-labelledby="h-into"></div>
+          <label for="moreInterests" class="sr-only">Add an interest</label>
+          <input type="text" id="moreInterests" class="add-input" placeholder="+ Add an interest, like jazz bars">
+          <label for="mustSee" class="sr-only">Places you don’t want to miss</label>
+          <input type="text" id="mustSee" class="add-input" placeholder="+ Must-see places, comma-separated">
+        </section>
+
+        <section class="fsec" aria-labelledby="h-move">
+          <h3 id="h-move">Getting around</h3>
         <div class="modes" id="modeSeg" role="group" aria-label="Getting around">
-          <button type="button" data-mode="walk"><span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4" r="2"/><path d="M11 21l2-6-3-3 1-5 3 3h3"/><path d="M8 13l-2 8"/></svg></span><b>Walk</b><small>On foot only</small></button>
-          <button type="button" data-mode="transit"><span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 11h14"/><circle cx="9" cy="14" r=".6" fill="currentColor"/><circle cx="15" cy="14" r=".6" fill="currentColor"/><path d="M8 21l2-4M16 21l-2-4"/></svg></span><b>Transit</b><small>Walk + bus and metro</small></button>
-          <button type="button" data-mode="ride"><span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v-4l2-5h12l2 5v4z"/><path d="M4 12h16"/><circle cx="7.5" cy="16.5" r="1.5"/><circle cx="16.5" cy="16.5" r="1.5"/></svg></span><b>Ride</b><small>Walk + taxi or Waymo</small></button>
+          <button type="button" data-mode="walk"><span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4" r="2"/><path d="M11 21l2-6-3-3 1-5 3 3h3"/><path d="M8 13l-2 8"/></svg></span><b>Walk</b></button>
+          <button type="button" data-mode="transit"><span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 11h14"/><circle cx="9" cy="14" r=".6" fill="currentColor"/><circle cx="15" cy="14" r=".6" fill="currentColor"/><path d="M8 21l2-4M16 21l-2-4"/></svg></span><b>Transit</b></button>
+          <button type="button" data-mode="ride"><span class="mode-ic" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v-4l2-5h12l2 5v4z"/><path d="M4 12h16"/><circle cx="7.5" cy="16.5" r="1.5"/><circle cx="16.5" cy="16.5" r="1.5"/></svg></span><b>Ride</b></button>
         </div>
+        </section>
         <button class="text-btn" id="moreOptionsBtn" type="button">Pace, budget, accessibility and more</button>
       </div>
 
       <p class="form-error" id="formError" role="alert" hidden></p>
       <div class="wizard-actions">
         <button class="secondary" id="stepBack" type="button">Back</button>
-        <button class="secondary" id="planBtn" type="button">Plan my day</button>
+        <button class="primary" id="planBtn" type="button">Plan my day</button>
         <button class="primary" id="stepNext" type="button">Next</button>
       </div>
     </form>
@@ -178,7 +180,7 @@
           </div>
           <div class="share">
             <p class="sr-only" id="shareLive" aria-live="polite"></p>
-            <button class="smallbtn" id="shareBtn" type="button" aria-expanded="false" aria-controls="shareMenu">Share</button>
+            <button class="text-btn share-btn" id="shareBtn" type="button" aria-expanded="false" aria-controls="shareMenu">Share</button>
             <div class="share-menu" id="shareMenu" hidden>
               <a id="mapsBtn" href="#" target="_blank" rel="noopener" aria-disabled="true">Open in Google Maps</a>
               <button id="icsBtn" type="button" disabled>Add to calendar</button>
@@ -188,13 +190,15 @@
         </div>
         <div class="live-bar" id="liveBar"></div>
         <div class="day-tabs" id="dayTabs" role="group" hidden aria-label="Trip days"></div>
-        <div class="tune-chips" id="tuneChips" role="group" aria-label="Fine-tune this day"></div>
       </header>
       <div class="sheet-body" id="sheetBody">
         <div id="dayList">
-        <p id="summary"></p>
+        <div class="tune-chips" id="tuneChips" role="group" aria-label="Fine-tune this day"></div>
+
         <h2 class="sr-only" id="h-itin">Itinerary</h2>
-        <ol id="itin" aria-labelledby="h-itin"></ol><div id="cuts"></div>
+        <ol id="itin" aria-labelledby="h-itin"></ol>
+        <p id="summary"></p>
+        <div id="cuts"></div>
         <details class="behind-plan">
           <summary>How this was planned</summary>
           <p>Every external call and planning step used to build this itinerary.</p>

@@ -21,7 +21,7 @@ function renderAll(){
 function renderHeading(){
   const p=S.plan,sm=p.summary,many=S.days&&S.days.length>1;
   $("#resultsTitle").textContent=many?`Day ${S.activeDay+1} in ${p.city}`:`Your day in ${p.city}`;
-  $("#glance").textContent=`${sm.stops} stop${sm.stops===1?"":"s"} · back ${fmt(p.end)} · ${sm.walk_km.toFixed(1)} km walking`;
+  $("#glance").textContent=`${sm.stops} stop${sm.stops===1?"":"s"} · back ${fmt(p.end)} · ${sm.walk_km.toFixed(1)} km walk`;
 }
 function renderDayTabs(){
   const box=$("#dayTabs"),many=S.days&&S.days.length>1;box.hidden=!many;

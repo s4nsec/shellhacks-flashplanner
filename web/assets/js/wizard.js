@@ -1,17 +1,15 @@
 /* ============ guided setup: one question at a time, everything pre-filled ============ */
 const Wizard={
-  step:0,LAST:4,
+  step:0,LAST:1,
   titleSel(){return this.step?`.wstep[data-step="${this.step}"] .wstep-title`:"#setupTitle";},
   go(n,{focus=true}={}){
     this.step=Math.max(0,Math.min(this.LAST,n));
     $$(".wstep").forEach(w=>w.hidden=Number(w.dataset.step)!==this.step);
     const first=this.step===0,last=this.step===this.LAST;
     $("#stepBack").hidden=first;
-    $("#planBtn").hidden=first;  // after the city, the rest can use defaults
-    $("#planBtn").className=last?"primary":"secondary";
+    $("#planBtn").hidden=first;  // everything after the city is pre-filled
     $("#stepNext").hidden=last;
-    $("#stepCount").textContent=first?"":`Step ${this.step} of ${this.LAST}`;
-    $("#stepBar").style.width=`${this.step/this.LAST*100}%`;
+    $("#dayTitle").textContent=`Your day in ${$("#city").value.split(",")[0].trim()||"the city"}`;
     if(focus)$(this.titleSel()).focus({preventScroll:true});
     MapView.fit();
   },

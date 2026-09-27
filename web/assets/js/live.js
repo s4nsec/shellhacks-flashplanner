@@ -10,20 +10,21 @@ function renderLive(){
     return;
   }
   const st=p.stops[0];
-  const next=st?`<p class="eyebrow">Next</p><p class="next-name">${esc(st.name)}</p>
-      <p class="next-meta">${legText(st.leg)} · leave by ${fmt(st.arrive-st.leg.min)} · arrive ${fmt(st.arrive)}</p>`
-    :`<p class="eyebrow">Last leg</p><p class="next-name">Head to ${esc(p.end_location.name)}</p><p class="next-meta">${legText(p.back)} · arrive ${fmt(p.end)}</p>`;
-  box.innerHTML=`<div class="next-card">${next}</div>
+  const next=st?`<p class="next-name"><span class="next-tag">Next</span> ${esc(st.name)}</p>
+      <p class="next-meta">Leave by ${fmt(st.arrive-st.leg.min)} · ${legText(st.leg)}</p>`
+    :`<p class="next-name"><span class="next-tag">Last leg</span> Head to ${esc(p.end_location.name)}</p><p class="next-meta">${legText(p.back)} · arrive ${fmt(p.end)}</p>`;
+  box.innerHTML=`<div class="next-card"><div class="next-head">${next}</div><button type="button" class="text-btn" id="endLive">End</button></div>
     <div class="live-actions" role="group" aria-label="Something changed">${LIVE_ACTIONS.map(([ev,label,full])=>
-      `<button type="button" class="tchip" data-live="${ev}" aria-label="${full}"${!st&&ev!=="rain"&&ev!=="tired"&&ev!=="late"?" disabled":""}>${label}</button>`).join("")}</div>
-    <form class="live-ask" id="liveAsk"><label for="liveText" class="sr-only">Tell us what changed</label>
-      <input type="text" id="liveText" placeholder="Something else changed? Tell us…" autocomplete="off">
-      <button type="submit" class="secondary">Update</button></form>
-    <button type="button" class="text-btn" id="endLive">Stop live mode</button>`;
+      `<button type="button" class="tchip" data-live="${ev}" aria-label="${full}"${!st&&ev!=="rain"&&ev!=="tired"&&ev!=="late"?" disabled":""}>${label}</button>`).join("")}
+      <button type="button" class="tchip" id="liveMore" aria-expanded="${S.askOpen?"true":"false"}" aria-controls="liveAsk">Other…</button></div>
+    <form class="live-ask" id="liveAsk"${S.askOpen?"":" hidden"}><label for="liveText" class="sr-only">Tell us what changed</label>
+      <input type="text" id="liveText" placeholder="What changed?" autocomplete="off">
+      <button type="submit" class="secondary">Update</button></form>`;
 }
 $("#liveBar").addEventListener("click",e=>{
   if(e.target.closest("#startDay")){S.live=true;renderLive();$("#liveBar .next-name")?.setAttribute("tabindex","-1");$("#liveBar .next-name")?.focus();return;}
   if(e.target.closest("#endLive")){S.live=false;renderLive();$("#startDay")?.focus();return;}
+  if(e.target.closest("#liveMore")){S.askOpen=!S.askOpen;renderLive();if(S.askOpen)$("#liveText").focus();else $("#liveMore").focus();return;}
   const b=e.target.closest("[data-live]");
   if(b)replan(b.dataset.live,30);
 });
